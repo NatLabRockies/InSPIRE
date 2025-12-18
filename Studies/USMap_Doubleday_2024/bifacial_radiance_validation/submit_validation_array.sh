@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --time=8:00:00
+#SBATCH --time=10:00:00
 #SBATCH --partition=standard
 #SBATCH --nodes=1
 #SBATCH --account=inspire
@@ -31,7 +31,7 @@ echo "GID: $GID"
 echo "Setup: $SETUP"
 
 # Define results path and ensure it exists and is empty
-RESULTS_PATH="/scratch/kdoubled/validation_results_v1"
+RESULTS_PATH="/scratch/kdoubled/validation_results_v2"
 # Only clear the directory on the first task to avoid race conditions
 if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     rm -rf "$RESULTS_PATH"
