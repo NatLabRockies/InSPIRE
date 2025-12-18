@@ -30,6 +30,19 @@ import argparse
 import numpy as np
 
 
+DISTANCE_ON_Y_SETUPS = {6, 7, 8, 9, 11}
+
+
+def _br_distance_axis_for_setup(setup_num: int) -> str:
+    """
+    Which bifacial_radiance coordinate corresponds to PySAM's `distance` dimension.
+
+    - Setups 1-5 and 10: BR `x` maps to PySAM `distance`
+    - Setups 6-9 and 11: BR `y` maps to PySAM `distance`
+    """
+    return "y" if setup_num in DISTANCE_ON_Y_SETUPS else "x"
+
+
 def consolidate_br_results(folder_name, base_path="."):
     """
     Consolidate bifacial radiance results from validation_results folder.
@@ -45,6 +58,7 @@ def consolidate_br_results(folder_name, base_path="."):
     -------
     pd.DataFrame
         DataFrame with columns: gid, setup, datetime, x, Wm2Front
+        where `x` is the distance coordinate aligned to PySAM `distance`.
         Contains only timestamps that exist in the CSV files.
     """
     # Construct full path to folder
@@ -53,7 +67,7 @@ def consolidate_br_results(folder_name, base_path="."):
     if not folder_path.exists() or not folder_path.is_dir():
         raise FileNotFoundError(f"Folder not found: {folder_path}")
     
-    # Get all setup folders (should be numbered 1-10)
+    # Get all setup folders (typically numbered 1-11)
     setup_folders = [d for d in folder_path.iterdir() if d.is_dir()]
     setup_numbers = []
     
@@ -150,17 +164,35 @@ def consolidate_br_results(folder_name, base_path="."):
                                 'Wm2Front': float
                             }
                         )
+
+                        # Aggregate to 1 value per distance (PySAM `distance`) per timestamp.
+                        # - Setups 1-5 and 10: distance = BR `x`, average Wm2Front across `y` for each `x`
+                        # - Setups 6-9 and 11: distance = BR `y`, average Wm2Front across `x` for each `y`
+                        distance_axis = _br_distance_axis_for_setup(setup_num)
+                        if distance_axis not in csv_data.columns:
+                            raise KeyError(
+                                f"Expected column '{distance_axis}' in {csv_file.name}, "
+                                f"but found columns: {list(csv_data.columns)}"
+                            )
+
+                        aggregated = (
+                            csv_data
+                            .assign(_distance=csv_data[distance_axis].astype(float))
+                            .groupby("_distance", as_index=False)["Wm2Front"]
+                            .mean()
+                            .rename(columns={"_distance": "x"})
+                        )
                         
                         # Add metadata columns
-                        csv_data['gid'] = int(gid)
-                        csv_data['setup'] = setup_num
-                        csv_data['datetime'] = file_datetime
-                        csv_data['data_source'] = 'bifacial_radiance'
+                        aggregated['gid'] = int(gid)
+                        aggregated['setup'] = setup_num
+                        aggregated['datetime'] = file_datetime
+                        aggregated['data_source'] = 'bifacial_radiance'
                         
                         # Reorder columns
-                        csv_data = csv_data[['gid', 'setup', 'datetime', 'x', 'Wm2Front', 'data_source']]
+                        aggregated = aggregated[['gid', 'setup', 'datetime', 'x', 'Wm2Front', 'data_source']]
                         
-                        all_data.append(csv_data)
+                        all_data.append(aggregated)
                         
                     except Exception as e:
                         warnings.warn(f"Error reading {csv_file}: {e}")
@@ -189,6 +221,7 @@ def create_distance_mapping(br_data):
     ----------
     br_data : pd.DataFrame
         Bifacial radiance data with 'x' column containing distance values
+        aligned to PySAM `distance` (setup-aware: BR x for setups 1-5,10; BR y for setups 6-9,11).
     
     Returns
     -------
@@ -261,8 +294,8 @@ def consolidate_s3_zarr_results(br_data, s3_bucket_path="oedi-data-lake/inspire/
     # Initialize list to store data from each setup
     all_data = []
     
-    # Process each setup (1-10)
-    for setup_num in range(1, 11):
+    # Process each setup present in the BR validation outputs
+    for setup_num in sorted(br_data['setup'].unique()):
         print(f"\nProcessing setup {setup_num}...")
         
         # Construct zarr file path
