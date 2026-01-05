@@ -8,5 +8,5 @@
 module load anaconda3
 conda activate /home/kdoubled/.conda-envs/s3env
 
-srun python consolidate_all_results.py validation_results_v1 --base-path "/scratch/kdoubled/"
+srun python consolidate_all_results.py validation_results_v2 --base-path "/scratch/kdoubled/"
 

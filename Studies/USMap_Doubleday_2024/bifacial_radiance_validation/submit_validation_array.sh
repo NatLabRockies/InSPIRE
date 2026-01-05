@@ -3,20 +3,20 @@
 #SBATCH --partition=standard
 #SBATCH --nodes=1
 #SBATCH --account=inspire
-#SBATCH --array=0-164
+#SBATCH --array=0-175
 
-# 0-164 (15 GIDs × 11 setups)
+# 0-175 (16 GIDs × 11 setups)
 
 module load anaconda3
 conda activate /home/kdoubled/.conda-envs/radianceEnv
 module load gcc
 source addPaths.sh
 
-# Define the 15 GIDs
-GIDS=(886847 243498 481324 852795 1116296 706260 478464 347412 1132667 138250 128689 981453 763236 1292659 191212)
+# Define the 16 GIDs
+GIDS=(886847 243498 481324 852795 1116296 706260 478464 347412 1132667 138250 128689 981453 763236 1292659 191212 25108)
 
 # Calculate which GID and setup to use based on array task ID
-# 165 jobs total: 15 GIDs × 11 setups
+# 176 jobs total: 16 GIDs × 11 setups
 # Each GID gets 11 consecutive array indices (0-10, 11-21, etc.)
 NUM_SETUPS=11
 GID_INDEX=$((SLURM_ARRAY_TASK_ID / NUM_SETUPS))
