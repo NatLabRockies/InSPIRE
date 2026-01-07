@@ -215,7 +215,10 @@ def create_distance_mapping(br_data):
     """
     Create a mapping from zarr distance indices (0-9) to actual distance values in meters.
     Uses the distance values from bifacial radiance data, which are monotonically increasing.
-    Maps index 9 to the smallest distance, index 8 to the next smallest, ..., index 0 to the largest.
+    
+    Mapping strategy (setup-aware):
+    - Setups 1-5 and 10: Reverse mapping (index 9 -> smallest distance, index 0 -> largest)
+    - Setups 6-9 and 11: Direct mapping (index 0 -> smallest distance, index 9 -> largest)
     
     Parameters
     ----------
@@ -236,13 +239,16 @@ def create_distance_mapping(br_data):
         setup_data = br_data[br_data['setup'] == setup]
         distance_mapping[setup] = {}
         
+        # Determine if reverse mapping is needed
+        # Setups 1-5 and 10 use reverse mapping; setups 6-9 and 11 use direct mapping
+        use_reverse = setup not in DISTANCE_ON_Y_SETUPS
+        
         for gid in sorted(setup_data['gid'].unique()):
             gid_data = setup_data[setup_data['gid'] == gid]
             
             # Get unique distance values and sort them (monotonically increasing)
             unique_distances = sorted(gid_data['x'].unique())
             
-            # Map indices 0-9 to distance values (reversed: index 9 maps to smallest distance)
             # If there are more than 10 unique distances, we need to select which ones to use
             # Strategy: if more than 10, evenly sample or use first 10
             # For now, use first 10 unique distances
@@ -255,14 +261,21 @@ def create_distance_mapping(br_data):
             
             gid_mapping = {}
             num_distances = len(selected_distances)
-            # Map in reverse: index 9 -> smallest distance, index 0 -> largest distance
-            for idx in range(num_distances):
-                zarr_index = (num_distances - 1) - idx  # Reverse mapping: 9, 8, 7, ..., 0
-                gid_mapping[zarr_index] = selected_distances[idx]
+            
+            if use_reverse:
+                # Reverse mapping: index 9 -> smallest distance, index 0 -> largest distance
+                for idx in range(num_distances):
+                    zarr_index = (num_distances - 1) - idx  # Reverse mapping: 9, 8, 7, ..., 0
+                    gid_mapping[zarr_index] = selected_distances[idx]
+            else:
+                # Direct mapping: index 0 -> smallest distance, index 9 -> largest distance
+                for idx in range(num_distances):
+                    gid_mapping[idx] = selected_distances[idx]
             
             distance_mapping[setup][gid] = gid_mapping
             
-            print(f"  Setup {setup}, GID {gid}: {len(gid_mapping)} distance points mapped (range: {min(selected_distances):.3f} to {max(selected_distances):.3f} m)")
+            mapping_type = "reverse" if use_reverse else "direct"
+            print(f"  Setup {setup}, GID {gid}: {len(gid_mapping)} distance points mapped ({mapping_type}, range: {min(selected_distances):.3f} to {max(selected_distances):.3f} m)")
     
     return distance_mapping
 
