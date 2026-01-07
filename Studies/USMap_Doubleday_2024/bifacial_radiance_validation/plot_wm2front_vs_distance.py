@@ -1,7 +1,7 @@
 """
 Plot Wm2Front vs Distance Comparison
 This script generates line plots comparing PySAM and bifacial radiance data
-for Wm2Front vs distance (x) for each of the 10 setups.
+for Wm2Front vs distance (x) for each of the 11 setups (1-11).
 
 The plot shows data from a combined pickle file (all_results.pkl) with a data_source column
 indicating whether data is from 'bifacial_radiance' or 'pysam'.
@@ -91,16 +91,16 @@ def plot_wm2front_vs_distance(
         lambda dt: dt.replace(second=0, microsecond=0)
     )
     
-    # Create figure with subplots for each setup (2 rows, 5 columns)
-    fig, axes = plt.subplots(2, 5, figsize=(20, 10))
+    # Create figure with subplots for each setup (3 rows, 4 columns for 11 setups)
+    fig, axes = plt.subplots(3, 4, figsize=(20, 15))
     timestamp_str = target_datetime_normalized.strftime('%Y-%m-%d %H:%M')
     fig.suptitle(f'GID: {gid}, Timestamp: {timestamp_str}', 
                  fontsize=16, fontweight='bold')
     
     axes = axes.flatten()
     
-    # Process each setup (1-10)
-    for setup in range(1, 11):
+    # Process each setup (1-11)
+    for setup in range(1, 12):
         ax = axes[setup - 1]
         
         # Filter validation data for this GID, setup, and timestamp
@@ -163,6 +163,9 @@ def plot_wm2front_vs_distance(
                 y_range = y_max - y_min
                 ax.set_xlim(x_min - 0.1 * x_range, x_max + 0.1 * x_range)
                 ax.set_ylim(max(0, y_min - 0.1 * y_range), y_max + 0.1 * y_range)
+    
+    # Hide the 12th subplot (index 11) since we only have 11 setups
+    axes[11].set_visible(False)
     
     plt.tight_layout()
     
