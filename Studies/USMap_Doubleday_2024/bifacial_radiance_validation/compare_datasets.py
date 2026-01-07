@@ -825,6 +825,71 @@ def compare_datasets(data_file='all_results.pkl', output_file=None):
     else:
         print("No GID-based statistics calculated.")
     
+    # Calculate statistics by Setup only (across all GIDs, distances, and hours)
+    print("\n" + "="*60)
+    print("Calculating statistics by Setup (across all GIDs, distances, and hours)...")
+    print("="*60)
+    
+    setup_results = []
+    setup_summary_df = pd.DataFrame()  # Initialize as empty DataFrame
+    
+    if len(all_matched_data) > 0:
+        all_matched_df = pd.DataFrame(all_matched_data)
+        
+        # Group by Setup only
+        for setup, group in all_matched_df.groupby('setup'):
+            meas = group['validation_irr'].values
+            model = group['pysam_irr'].values
+            
+            # Filter out zero or very small values
+            mask = (meas > 0.1) & (model > 0.1)
+            meas_filtered = meas[mask]
+            model_filtered = model[mask]
+            
+            if len(meas_filtered) == 0:
+                continue
+            
+            # Calculate statistics
+            mbd_pct = MBD(meas_filtered, model_filtered)
+            rmse_pct = RMSE(meas_filtered, model_filtered)
+            mad_pct = MAD(meas_filtered, model_filtered)
+            mbd_abs_val = MBD_abs(meas_filtered, model_filtered)
+            rmse_abs_val = RMSE_abs(meas_filtered, model_filtered)
+            mad_abs_val = MAD_abs(meas_filtered, model_filtered)
+            
+            # Additional statistics
+            n_points = len(meas_filtered)
+            mean_meas = meas_filtered.mean()
+            mean_model = model_filtered.mean()
+            corr = np.corrcoef(meas_filtered, model_filtered)[0, 1] if len(meas_filtered) > 1 else np.nan
+            
+            setup_results.append({
+                'setup': setup,
+                'n_points': n_points,
+                'mean_validation': mean_meas,
+                'mean_pysam': mean_model,
+                'MBD_percent': mbd_pct,
+                'RMSE_percent': rmse_pct,
+                'MAD_percent': mad_pct,
+                'MBD_absolute': mbd_abs_val,
+                'RMSE_absolute': rmse_abs_val,
+                'MAD_absolute': mad_abs_val,
+                'correlation': corr
+            })
+    
+    setup_summary_df = pd.DataFrame(setup_results)
+    
+    if len(setup_summary_df) > 0:
+        # Sort by setup
+        setup_summary_df = setup_summary_df.sort_values('setup').reset_index(drop=True)
+        
+        print("\n" + "="*60)
+        print("SUMMARY STATISTICS (by Setup)")
+        print("="*60)
+        print(setup_summary_df.to_string(index=False))
+    else:
+        print("No Setup-based statistics calculated.")
+    
     # Calculate matched time-points per GID
     print("\n" + "="*60)
     print("MATCHED TIME-POINTS PER GID")
@@ -1073,8 +1138,14 @@ def compare_datasets(data_file='all_results.pkl', output_file=None):
             gid_output_file = output_file.replace('.csv', '_by_gid.csv')
             gid_summary_df.to_csv(gid_output_file, index=False)
             print(f"Summary statistics (by GID) saved to: {gid_output_file}")
+        
+        # Save Setup-based statistics to a separate file
+        if len(setup_summary_df) > 0:
+            setup_output_file = output_file.replace('.csv', '_by_setup.csv')
+            setup_summary_df.to_csv(setup_output_file, index=False)
+            print(f"Summary statistics (by Setup) saved to: {setup_output_file}")
     
-    return summary_df, gid_summary_df
+    return summary_df, gid_summary_df, setup_summary_df
 
 
 def plot_from_csv(hour_overall_csv=None, hour_setup_csv=None, output_file=None):
@@ -1238,12 +1309,12 @@ Examples:
     output_file = args.output if args.output else 'comparison_summary.csv'
     
     # Compare datasets
-    summary, distance_summary = compare_datasets(
+    summary, gid_summary, setup_summary = compare_datasets(
         data_file=args.data_file,
         output_file=output_file
     )
     
-    return summary, distance_summary
+    return summary, gid_summary, setup_summary
 
 
 if __name__ == "__main__":
