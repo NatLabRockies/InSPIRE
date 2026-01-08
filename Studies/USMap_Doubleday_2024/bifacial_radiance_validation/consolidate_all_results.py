@@ -165,9 +165,9 @@ def consolidate_br_results(folder_name, base_path="."):
                             }
                         )
 
-                        # Aggregate to 1 value per distance (PySAM `distance`) per timestamp.
-                        # - Setups 1-5 and 10: distance = BR `x`, average Wm2Front across `y` for each `x`
-                        # - Setups 6-9 and 11: distance = BR `y`, average Wm2Front across `x` for each `y`
+                        # Aggregate to 10 distance points (matching PySAM resolution) per timestamp.
+                        # - Setups 1-5 and 10: distance = BR `x`, average Wm2Front across `y` for each `x`, then chunk into 10 segments
+                        # - Setups 6-9 and 11: distance = BR `y`, average Wm2Front across `x` for each `y`, then chunk into 10 segments
                         distance_axis = _br_distance_axis_for_setup(setup_num)
                         if distance_axis not in csv_data.columns:
                             raise KeyError(
@@ -175,13 +175,44 @@ def consolidate_br_results(folder_name, base_path="."):
                                 f"but found columns: {list(csv_data.columns)}"
                             )
 
-                        aggregated = (
+                        # First, average across the non-distance axis (y for setups 1-5,10; x for setups 6-9,11)
+                        # This is done implicitly by grouping by distance_axis and averaging Wm2Front
+                        pre_aggregated = (
                             csv_data
-                            .assign(_distance=csv_data[distance_axis].astype(float))
-                            .groupby("_distance", as_index=False)["Wm2Front"]
+                            .groupby(distance_axis, as_index=False)["Wm2Front"]
                             .mean()
-                            .rename(columns={"_distance": "x"})
+                            .sort_values(distance_axis)
+                            .reset_index(drop=True)
                         )
+                        
+                        # Chunk the distance axis into 10 segments and average within each chunk
+                        num_points = len(pre_aggregated)
+                        num_chunks = 10
+                        chunk_size = num_points / num_chunks
+                        
+                        chunked_data = []
+                        for chunk_idx in range(num_chunks):
+                            start_idx = int(chunk_idx * chunk_size)
+                            # For the last chunk, include all remaining points
+                            if chunk_idx == num_chunks - 1:
+                                end_idx = num_points
+                            else:
+                                end_idx = int((chunk_idx + 1) * chunk_size)
+                            
+                            chunk = pre_aggregated.iloc[start_idx:end_idx]
+                            
+                            # Calculate midpoint of distance values in this chunk
+                            distance_midpoint = chunk[distance_axis].mean()
+                            
+                            # Average Wm2Front across this chunk
+                            wm2_avg = chunk["Wm2Front"].mean()
+                            
+                            chunked_data.append({
+                                "x": distance_midpoint,
+                                "Wm2Front": wm2_avg
+                            })
+                        
+                        aggregated = pd.DataFrame(chunked_data)
                         
                         # Add metadata columns
                         aggregated['gid'] = int(gid)
