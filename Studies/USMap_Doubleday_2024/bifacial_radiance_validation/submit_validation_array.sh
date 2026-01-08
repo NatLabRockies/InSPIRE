@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH --time=10:00:00
+#SBATCH --time=100:00:00
 #SBATCH --partition=standard
 #SBATCH --nodes=1
 #SBATCH --account=inspire
-#SBATCH --array=0-175
+#SBATCH --array=0-10
 
 # 0-175 (16 GIDs × 11 setups)
 
@@ -13,7 +13,8 @@ module load gcc
 source addPaths.sh
 
 # Define the 16 GIDs
-GIDS=(886847 243498 481324 852795 1116296 706260 478464 347412 1132667 138250 128689 981453 763236 1292659 191212 25108)
+GIDS=(886847)
+# GIDS=(886847 243498 481324 852795 1116296 706260 478464 347412 1132667 138250 128689 981453 763236 1292659 191212 25108)
 
 # Calculate which GID and setup to use based on array task ID
 # 176 jobs total: 16 GIDs × 11 setups
@@ -31,7 +32,7 @@ echo "GID: $GID"
 echo "Setup: $SETUP"
 
 # Define results path and ensure it exists and is empty
-RESULTS_PATH="/scratch/kdoubled/validation_results_v2"
+RESULTS_PATH="/scratch/kdoubled/validation_results_v3"
 # Only clear the directory on the first task to avoid race conditions
 if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     rm -rf "$RESULTS_PATH"

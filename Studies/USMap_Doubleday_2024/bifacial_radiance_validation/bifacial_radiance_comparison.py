@@ -276,7 +276,7 @@ def simulate_single(df_tmy = None, meta_dict = None, gid = None, setup = None,
 
     # -- establish tracking angles
     trackerParams = {'limit_angle':50,
-                     'angledelta':5,
+                     'angledelta':0.01,
                      'backtrack':True,
                      'gcr':gcr,
                      'cumulativesky':False,
@@ -343,7 +343,7 @@ def simulate_single(df_tmy = None, meta_dict = None, gid = None, setup = None,
 
     # Modify modscanfront for Ground
     # 2 sensors parallel to modules, 1 in light and 1 in shade for checkerboard pattern
-    numsensors = 10
+    numsensors = 100
     resolutionGround = pitch / numsensors
     if setup < 6 or setup == 10:
         # Single-axis and vertical bifacial versions
