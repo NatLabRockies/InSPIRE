@@ -1,6 +1,5 @@
 #!/bin/bash
 #SBATCH --time=100:00:00
-#SBATCH --partition=standard
 #SBATCH --nodes=1
 #SBATCH --account=inspire
 #SBATCH --array=0-10
