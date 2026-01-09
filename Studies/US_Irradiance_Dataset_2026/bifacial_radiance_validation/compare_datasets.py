@@ -730,6 +730,21 @@ def compare_datasets(data_file='all_results.pkl', output_file=None):
         mean_model = model_filtered.mean()
         corr = np.corrcoef(meas_filtered, model_filtered)[0, 1]
         
+        # Calculate total annual insolation (average across distance dimension, then sum across time)
+        # Group by time point (dayofyear, hour) and average across x values (distances)
+        time_avg_br = matched_df.groupby(['dayofyear', 'hour'])['validation_irr'].mean()
+        time_avg_pysam = matched_df.groupby(['dayofyear', 'hour'])['pysam_irr'].mean()
+        
+        # Sum the time-averaged values to get total annual insolation
+        total_br_insolation = time_avg_br.sum()
+        total_pysam_insolation = time_avg_pysam.sum()
+        
+        # Calculate percent difference: 100 * (pysam - br) / br
+        if total_br_insolation > 0:
+            pct_diff_insolation = 100 * (total_pysam_insolation - total_br_insolation) / total_br_insolation
+        else:
+            pct_diff_insolation = np.nan
+        
         results.append({
             'gid': gid,
             'setup': setup,
@@ -742,7 +757,10 @@ def compare_datasets(data_file='all_results.pkl', output_file=None):
             'MBD_absolute': mbd_abs_val,
             'RMSE_absolute': rmse_abs_val,
             'MAD_absolute': mad_abs_val,
-            'correlation': corr
+            'correlation': corr,
+            'total_annual_insolation_br': total_br_insolation,
+            'total_annual_insolation_pysam': total_pysam_insolation,
+            'pct_diff_insolation': pct_diff_insolation
         })
         
         print(f"  Matched {n_points} data points")
@@ -1099,6 +1117,21 @@ def compare_datasets(data_file='all_results.pkl', output_file=None):
         overall_mad_abs = MAD_abs(all_meas, all_model)
         overall_corr = np.corrcoef(all_meas, all_model)[0, 1]
         
+        # Calculate total annual insolation for overall (average across distance dimension, then sum across time)
+        # Group by time point (dayofyear, hour) and average across x values (distances)
+        overall_time_avg_br = all_matched_df.groupby(['dayofyear', 'hour'])['validation_irr'].mean()
+        overall_time_avg_pysam = all_matched_df.groupby(['dayofyear', 'hour'])['pysam_irr'].mean()
+        
+        # Sum the time-averaged values to get total annual insolation
+        overall_total_br_insolation = overall_time_avg_br.sum()
+        overall_total_pysam_insolation = overall_time_avg_pysam.sum()
+        
+        # Calculate percent difference
+        if overall_total_br_insolation > 0:
+            overall_pct_diff_insolation = 100 * (overall_total_pysam_insolation - overall_total_br_insolation) / overall_total_br_insolation
+        else:
+            overall_pct_diff_insolation = np.nan
+        
         overall_row = {
             'gid': 'ALL',
             'setup': 'ALL',
@@ -1111,7 +1144,10 @@ def compare_datasets(data_file='all_results.pkl', output_file=None):
             'MBD_absolute': overall_mbd_abs,
             'RMSE_absolute': overall_rmse_abs,
             'MAD_absolute': overall_mad_abs,
-            'correlation': overall_corr
+            'correlation': overall_corr,
+            'total_annual_insolation_br': overall_total_br_insolation,
+            'total_annual_insolation_pysam': overall_total_pysam_insolation,
+            'pct_diff_insolation': overall_pct_diff_insolation
         }
         
         summary_df = pd.concat([summary_df, pd.DataFrame([overall_row])], ignore_index=True)
