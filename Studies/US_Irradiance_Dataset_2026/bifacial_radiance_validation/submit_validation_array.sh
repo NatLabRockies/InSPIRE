@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --time=100:00:00
+#SBATCH --time=10:00:00
 #SBATCH --nodes=1
 #SBATCH --account=inspire
-#SBATCH --array=0-10
+#SBATCH --array=0-175
 
 # 0-175 (16 GIDs × 11 setups)
 
@@ -12,8 +12,7 @@ module load gcc
 source addPaths.sh
 
 # Define the 16 GIDs
-GIDS=(886847)
-# GIDS=(886847 243498 481324 852795 1116296 706260 478464 347412 1132667 138250 128689 981453 763236 1292659 191212 25108)
+GIDS=(886847 243498 481324 852795 1116296 706260 478464 347412 1132667 138250 128689 981453 763236 1292659 191212 25108)
 
 # Calculate which GID and setup to use based on array task ID
 # 176 jobs total: 16 GIDs × 11 setups
