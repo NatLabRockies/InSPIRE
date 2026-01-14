@@ -133,10 +133,41 @@ Combining model runs and postprocessing results into a final result.
 
 To merge model runs and postprocessing use `sbatch scripts/submit_combine.slurm`. Then use `scripts/submit_check_combine.slurm` to check for data integrity. This only examines that we have no gids in the dataset.
 
-### 4. Deployment (Optional)
+### Check and Add distances_m to zarrs (OPTIONAL)
+
+Due to a bug in the beds_postprocessing code. It is possible that  `distances_m` was not correctly appended to the zarrs during postprocessing (step 2). There is a small script called `scripts/restore_distances_m.py` that can be run as follows. 
+
+```bash
+python scripts/restore_distances_m.py $INSPIRE_AGRIVOLT_FINAL_DIR
+```
+
+The script updates existing zarrs by appending a new data variable that contains the physical distances in meters corresponding to the distances index (0, 1, 2, 3, 4, 5, 6, 7, 8, 9) on combined datasets/zarrs.
+
+**Note: Script updates zarrs in-place and checks that chunks are intact by looking for any non-finite values and outputting the min and max**
+
+### 4. Deployment (OPTIONAL)
 Uploading the final result to OpenEI on S3.
 
 We want to deploy the final dataset versions to S3. AWS CLI is too slow so we will use `scripts/submit_upload_zarrs.slurm`. 
+
+**Note: this script renames zarr configs when they are uploaded to s3. It does not change them in-place (on kestrel)**
+
+
+
+| Config name                                      | Original config | Updated config name |
+| ------------------------------------------------ | --------------- | ------------------- |
+| SAT (Conventional)                               | 01              | 01                  |
+| SAT (Elevated)                                   | 02              | 02                  |
+| SAT (Elevated with Inter-Panel Spacing)          | 03              | 03                  |
+| SAT (Double Row Spacing)                         | 04              | 04                  |
+| SAT (Triple Row Spacing)                         | 05              | 05                  |
+| Fixed Tilt (Conventional, ground clearance 1.5m) | **06**          | **07**              |
+| Fixed Tilt (Elevated)                            | **07**          | **08**              |
+| Fixed Tilt (Elevated with Inter-Panel Spacing)   | **08**          | **09**              |
+| Fixed Tilt (Elevated with Inter-Panel Spacing)   | **09**          | **10**              |
+| Fixed Tilt (Double Pitch)                        | **10**          | **11**              |
+| Fixed Tilt (Conventional, ground clearance 0.5m) | **11**          | **06**              |
+
 
 ## inspire-agrivolt CLI
 `inspire-agrivolt` defines a cli interface run the PySAM wrapper over SAM configs and postprocess them. These utilities are wrapped in scripts which allow for batch processing for dataset creation. Most users should not need to interact with the inspire_agrivolt python source to run the dataset.
