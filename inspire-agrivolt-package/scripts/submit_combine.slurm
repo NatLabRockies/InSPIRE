@@ -2,7 +2,7 @@
 #SBATCH --output=scripts/logs/agrivolt-irr-combine-%x-%j.out
 #SBATCH --error=scripts/logs/agrivolt-irr-combine-%x-%j.err
 #SBATCH --time=15:00:00
-#SBATCH --partition=standard
+#SBATCH --partition=shared
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=33

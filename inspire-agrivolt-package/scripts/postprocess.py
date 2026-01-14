@@ -93,8 +93,8 @@ def run_postprocess_all_states_confs(model_outs_dir: Path, postprocess_dir: Path
 def main():
     parser = argparse.ArgumentParser("postprocessor", description='postprocess model outputs')
 
-    parser.add_argument('model-outs-dir')
-    parser.add_argument('postprocess-dir')
+    parser.add_argument('model_outs_dir')
+    parser.add_argument('postprocess_dir')
 
     args = parser.parse_args()
 
