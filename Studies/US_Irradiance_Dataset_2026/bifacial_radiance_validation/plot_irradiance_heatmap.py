@@ -1,10 +1,11 @@
 """
 Plot Irradiance Heatmap from Pickle File
-This script generates heatmaps of Wm2Front (irradiance) values from all_results.pkl DataFrame,
-aggregated by hour of day or showing all time points.
+This script generates heatmaps of Wm2Front (irradiance) values from all_results.pkl or 
+br_full_resolution_results.pkl DataFrame, aggregated by hour of day or showing all time points.
 
 Usage:
     python plot_irradiance_heatmap.py --setup 1 --gid 886847 --data-source bifacial_radiance --output heatmap.png
+    python plot_irradiance_heatmap.py --setup 1 --gid 886847 --data-file br_full_resolution_results.pkl --output heatmap.png
 """
 
 import pandas as pd
@@ -17,15 +18,18 @@ import matplotlib.colors as mcolors
 
 def plot_irradiance_heatmap_from_pkl(df, setup, gid, data_source=None, output_file=None,
                                       aggregate_by_hour=True, aggregation='mean',
-                                      figsize=(12, 8), cmap='viridis'):
+                                      figsize=(12, 8), cmap='viridis',
+                                      hour_start=None, hour_end=None):
     """
-    Plot a heatmap of Wm2Front (irradiance) values from all_results.pkl DataFrame,
+    Plot a heatmap of Wm2Front (irradiance) values from all_results.pkl or br_full_resolution_results.pkl DataFrame,
     aggregated by hour of day.
+    
+    Works with both aggregated (10 distance points) and full resolution (100 distance points) datasets.
     
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame loaded from all_results.pkl with columns: gid, setup, datetime, x, Wm2Front, data_source
+        DataFrame loaded from pickle file with columns: gid, setup, datetime, x, Wm2Front, data_source
     setup : int
         Setup number to plot
     gid : int
@@ -35,10 +39,14 @@ def plot_irradiance_heatmap_from_pkl(df, setup, gid, data_source=None, output_fi
     output_file : str, optional
         Path to save the plot. If None, displays the plot.
     aggregate_by_hour : bool, default True
-        If True, aggregate across all days for each hour (0-23) to create a 24-row heatmap.
+        If True, aggregate across all days for each hour to create a heatmap.
         If False, show all time points on y-axis.
     aggregation : str, default 'mean'
         Aggregation method when aggregate_by_hour=True. Options: 'mean', 'max', 'min', 'sum'
+    hour_start : int, optional
+        Start hour of day (0-23) for y-axis range. If None, uses hours with data.
+    hour_end : int, optional
+        End hour of day (0-23, inclusive) for y-axis range. If None, uses hours with data.
     figsize : tuple, default (12, 8)
         Figure size (width, height) in inches
     cmap : str, default 'viridis'
@@ -76,45 +84,56 @@ def plot_irradiance_heatmap_from_pkl(df, setup, gid, data_source=None, output_fi
         # Extract hour of day
         filtered_df['hour'] = filtered_df['datetime'].dt.hour
         
-        # Initialize array for aggregated data: 24 hours x distances
-        data_by_hour = np.full((24, len(distances)), np.nan)
+        # Determine which hours to include on y-axis
+        if hour_start is not None and hour_end is not None:
+            # Use specified hour range
+            if hour_start < 0 or hour_start > 23 or hour_end < 0 or hour_end > 23:
+                raise ValueError("hour_start and hour_end must be between 0 and 23")
+            if hour_start > hour_end:
+                raise ValueError("hour_start must be <= hour_end")
+            hours_to_show = list(range(hour_start, hour_end + 1))
+        else:
+            # Fall back to detecting hours with data
+            hours_to_show = sorted(filtered_df['hour'].unique())
+            if len(hours_to_show) == 0:
+                raise ValueError("No data found for any hour of day")
         
-        # Aggregate data for each hour (0-23)
-        for hour in range(24):
+        # Initialize array for aggregated data: hours to show x distances
+        data_by_hour = np.full((len(hours_to_show), len(distances)), np.nan)
+        
+        # Aggregate data for each hour in the range
+        for hour_idx, hour in enumerate(hours_to_show):
             hour_data = filtered_df[filtered_df['hour'] == hour]
             
-            if len(hour_data) > 0:
-                # Pivot to get distance x time structure, then aggregate
-                for dist_idx, dist in enumerate(distances):
-                    dist_data = hour_data[hour_data['x'] == dist]['Wm2Front'].values
-                    
-                    if len(dist_data) > 0:
-                        if aggregation == 'mean':
-                            data_by_hour[hour, dist_idx] = np.nanmean(dist_data)
-                        elif aggregation == 'max':
-                            data_by_hour[hour, dist_idx] = np.nanmax(dist_data)
-                        elif aggregation == 'min':
-                            data_by_hour[hour, dist_idx] = np.nanmin(dist_data)
-                        elif aggregation == 'sum':
-                            data_by_hour[hour, dist_idx] = np.nansum(dist_data)
-                        else:
-                            raise ValueError(f"Unknown aggregation method: {aggregation}")
+            # Pivot to get distance x time structure, then aggregate
+            for dist_idx, dist in enumerate(distances):
+                dist_data = hour_data[hour_data['x'] == dist]['Wm2Front'].values
+                
+                if len(dist_data) > 0:
+                    if aggregation == 'mean':
+                        data_by_hour[hour_idx, dist_idx] = np.nanmean(dist_data)
+                    elif aggregation == 'max':
+                        data_by_hour[hour_idx, dist_idx] = np.nanmax(dist_data)
+                    elif aggregation == 'min':
+                        data_by_hour[hour_idx, dist_idx] = np.nanmin(dist_data)
+                    elif aggregation == 'sum':
+                        data_by_hour[hour_idx, dist_idx] = np.nansum(dist_data)
+                    else:
+                        raise ValueError(f"Unknown aggregation method: {aggregation}")
         
-        # Create heatmap with 24 rows (one for each hour)
+        # Create heatmap with rows for specified hours
         im = ax.imshow(data_by_hour, aspect='auto', cmap=cmap,
-                      extent=[min(distances), max(distances), -0.5, 23.5],
+                      extent=[min(distances), max(distances), -0.5, len(hours_to_show) - 0.5],
                       origin='lower', interpolation='nearest')
         
         # Set labels
-        ax.set_xlabel('Distance (m)', fontsize=12)
-        ax.set_ylabel('Hour of Day', fontsize=12)
-        ax.set_yticks(range(24))
-        ax.set_yticklabels([f'{h:02d}:00' for h in range(24)])
+        ax.set_xlabel('Location in row-to-row pitch (m)', fontsize=10)
+        ax.set_ylabel('Hour of Day', fontsize=10)
+        ax.set_yticks(range(len(hours_to_show)))
+        ax.set_yticklabels([f'{h:02d}' for h in hours_to_show])
+        ax.tick_params(axis='both', labelsize=8)
         
         data_source_str = f" ({data_source})" if data_source else ""
-        ax.set_title(f'Irradiance Heatmap (Setup {setup}, GID {gid}{data_source_str})\n'
-                    f'Aggregated by hour of day ({aggregation} across all days)', 
-                    fontsize=14, fontweight='bold')
         
     else:
         # Show all time points on y-axis
@@ -142,13 +161,11 @@ def plot_irradiance_heatmap_from_pkl(df, setup, gid, data_source=None, output_fi
                       origin='lower', interpolation='nearest')
         
         # Set labels
-        ax.set_xlabel('Distance (m)', fontsize=12)
-        ax.set_ylabel('Time Index', fontsize=12)
+        ax.set_xlabel('Location in row-to-row pitch (m)', fontsize=10)
+        ax.set_ylabel('Time Index', fontsize=10)
+        ax.tick_params(axis='both', labelsize=8)
         
         data_source_str = f" ({data_source})" if data_source else ""
-        ax.set_title(f'Irradiance Heatmap (Setup {setup}, GID {gid}{data_source_str})\n'
-                    f'All time points', 
-                    fontsize=14, fontweight='bold')
         
         # Format time axis
         try:
@@ -158,13 +175,14 @@ def plot_irradiance_heatmap_from_pkl(df, setup, gid, data_source=None, output_fi
             tick_indices = np.linspace(0, len(times) - 1, n_ticks, dtype=int)
             ax.set_yticks(tick_indices)
             ax.set_yticklabels([times[i].strftime('%Y-%m-%d %H:%M') for i in tick_indices])
-            plt.setp(ax.yaxis.get_majorticklabels(), rotation=45, ha='right')
+            plt.setp(ax.yaxis.get_majorticklabels(), rotation=45, ha='right', fontsize=8)
         except:
             pass
     
     # Add colorbar
     cbar = plt.colorbar(im, ax=ax)
-    cbar.set_label('Irradiance (W/m²)', fontsize=11, rotation=270, labelpad=20)
+    cbar.set_label('Ground irradiance (W/m²)', fontsize=10, rotation=270, labelpad=10)
+    cbar.ax.tick_params(labelsize=8)
     
     plt.tight_layout()
     
@@ -181,18 +199,24 @@ def plot_irradiance_heatmap_from_pkl(df, setup, gid, data_source=None, output_fi
 def main():
     """Command-line interface for plotting irradiance heatmaps."""
     parser = argparse.ArgumentParser(
-        description='Plot irradiance heatmap from all_results.pkl',
+        description='Plot irradiance heatmap from all_results.pkl or br_full_resolution_results.pkl',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Plot heatmap aggregated by hour for setup 1, GID 886847, bifacial_radiance data:
   python plot_irradiance_heatmap.py --setup 11 --gid 886847 --data-source bifacial_radiance --data-file all_results_config_11.pkl --output setup_11_heatmap.png
 
+  # Plot full resolution BR dataset (100 distance points):
+  python plot_irradiance_heatmap.py --setup 1 --gid 886847 --data-file br_full_resolution_results.pkl --output br_full_res_heatmap.png
+
   # Plot full time series heatmap for pysam data:
   python plot_irradiance_heatmap.py --setup 1 --gid 886847 --data-source pysam --no-aggregate-by-hour --output plot.png
 
   # Plot with custom aggregation method:
   python plot_irradiance_heatmap.py --setup 1 --gid 886847 --aggregation max --output plot.png
+
+  # Plot with specified hour range (9 AM to 3 PM):
+  python plot_irradiance_heatmap.py --setup 1 --gid 886847 --hour-start 9 --hour-end 15 --output plot.png
         """
     )
     
@@ -200,7 +224,7 @@ Examples:
         '--data-file',
         type=str,
         default='all_results.pkl',
-        help='Path to all_results.pkl file (default: all_results.pkl)'
+        help='Path to pickle file (all_results.pkl or br_full_resolution_results.pkl, default: all_results.pkl)'
     )
     
     parser.add_argument(
@@ -250,9 +274,9 @@ Examples:
         '--figsize',
         type=float,
         nargs=2,
-        default=[12, 8],
+        default=[3, 2.3],
         metavar=('WIDTH', 'HEIGHT'),
-        help='Figure size in inches (default: 12 8)'
+        help='Figure size in inches (default: 3 2.3)'
     )
     
     parser.add_argument(
@@ -262,7 +286,29 @@ Examples:
         help='Colormap to use for the heatmap (default: viridis)'
     )
     
+    parser.add_argument(
+        '--hour-start',
+        type=int,
+        default=None,
+        metavar='HOUR',
+        help='Start hour of day (0-23) for y-axis range. If not specified, uses hours with data.'
+    )
+    
+    parser.add_argument(
+        '--hour-end',
+        type=int,
+        default=None,
+        metavar='HOUR',
+        help='End hour of day (0-23, inclusive) for y-axis range. If not specified, uses hours with data.'
+    )
+    
     args = parser.parse_args()
+    
+    # Validate hour range arguments
+    if (args.hour_start is not None and args.hour_end is None) or \
+       (args.hour_start is None and args.hour_end is not None):
+        print("Error: --hour-start and --hour-end must be provided together.")
+        sys.exit(1)
     
     # Load data
     print(f"Loading data from {args.data_file}...")
@@ -279,6 +325,17 @@ Examples:
     print(f"Found {df['gid'].nunique()} unique GIDs")
     print(f"Found {df['setup'].nunique()} unique setups")
     
+    # Show distance point information for the selected setup/gid
+    if args.setup in df['setup'].values and args.gid in df['gid'].values:
+        filtered = df[(df['setup'] == args.setup) & (df['gid'] == args.gid)]
+        if args.data_source:
+            filtered = filtered[filtered['data_source'] == args.data_source]
+        if len(filtered) > 0:
+            num_distances = filtered['x'].nunique()
+            print(f"Found {num_distances} unique distance points for setup {args.setup}, GID {args.gid}")
+            if num_distances > 50:
+                print("  (Full resolution dataset detected)")
+    
     # Create plot
     try:
         plot_irradiance_heatmap_from_pkl(
@@ -290,7 +347,9 @@ Examples:
             aggregate_by_hour=not args.no_aggregate_by_hour,
             aggregation=args.aggregation,
             figsize=tuple(args.figsize),
-            cmap=args.cmap
+            cmap=args.cmap,
+            hour_start=args.hour_start,
+            hour_end=args.hour_end
         )
     except ValueError as e:
         print(f"Error: {e}")

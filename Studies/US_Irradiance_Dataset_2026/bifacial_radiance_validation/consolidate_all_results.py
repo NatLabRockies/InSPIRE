@@ -17,6 +17,7 @@ Usage from command line:
     python consolidate_all_results.py validation_results
     python consolidate_all_results.py validation_results --base-path "/path/to/folder"
     python consolidate_all_results.py validation_results --output all_results.pkl
+    python consolidate_all_results.py validation_results --br-only-full-res
 """
 
 import pandas as pd
@@ -235,6 +236,180 @@ def consolidate_br_results(folder_name, base_path="."):
     combined_data = pd.concat(all_data, ignore_index=True)
     
     print(f"\nLoaded {len(combined_data)} rows of bifacial radiance data")
+    print(f"Found {combined_data['gid'].nunique()} GIDs")
+    print(f"Found {combined_data['setup'].nunique()} setups")
+    print(f"Date range: {combined_data['datetime'].min()} to {combined_data['datetime'].max()}")
+    
+    return combined_data
+
+
+def consolidate_br_results_full_resolution(folder_name, base_path="."):
+    """
+    Consolidate bifacial radiance results from validation_results folder at full resolution.
+    This version keeps all distance points (typically ~100) instead of aggregating to 10.
+    
+    Parameters
+    ----------
+    folder_name : str
+        Name of the folder (e.g., "validation_results")
+    base_path : str, default "."
+        Base path to the folder. Defaults to current directory.
+    
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns: gid, setup, datetime, x, Wm2Front, data_source
+        where `x` is the distance coordinate aligned to PySAM `distance`.
+        Contains all distance points (full resolution) after averaging across the non-distance axis.
+    """
+    # Construct full path to folder
+    folder_path = Path(base_path) / folder_name
+    
+    if not folder_path.exists() or not folder_path.is_dir():
+        raise FileNotFoundError(f"Folder not found: {folder_path}")
+    
+    # Get all setup folders (typically numbered 1-11)
+    setup_folders = [d for d in folder_path.iterdir() if d.is_dir()]
+    setup_numbers = []
+    
+    for setup_folder in setup_folders:
+        try:
+            setup_num = int(setup_folder.name)
+            setup_numbers.append(setup_num)
+        except ValueError:
+            continue
+    
+    setup_numbers = sorted(setup_numbers)
+    
+    if len(setup_numbers) == 0:
+        raise ValueError("No setup folders found")
+    
+    print(f"Found {len(setup_numbers)} setup folders")
+    
+    # Initialize list to store data from each setup/GID combination
+    all_data = []
+    
+    # Process each setup
+    for setup_num in setup_numbers:
+        print(f"Processing setup {setup_num}...")
+        
+        setup_path = folder_path / str(setup_num)
+        
+        # Get all GID folders within this setup
+        gid_folders = [d for d in setup_path.iterdir() if d.is_dir()]
+        
+        # Process each GID folder
+        for gid_folder in gid_folders:
+            gid = gid_folder.name
+            print(f"  Processing GID {gid}...")
+            
+            # Get all day folders within this GID folder
+            day_folders = [d for d in gid_folder.iterdir() if d.is_dir()]
+            
+            if len(day_folders) == 0:
+                warnings.warn(f"No day folders found in: {gid_folder}")
+                continue
+            
+            # Process each day folder
+            for day_folder in day_folders:
+                results_path = day_folder / "results"
+                
+                if not results_path.exists() or not results_path.is_dir():
+                    warnings.warn(f"Results folder not found: {results_path}")
+                    continue
+                
+                # Find all Ground CSV files
+                csv_files = list(results_path.glob("*Ground*.csv"))
+                
+                if len(csv_files) == 0:
+                    warnings.warn(f"No Ground CSV files found in: {results_path}")
+                    continue
+                
+                # Process each CSV file
+                for csv_file in csv_files:
+                    # Extract datetime from filename
+                    filename = csv_file.name
+                    
+                    # Extract date and time from filename
+                    datetime_match = re.search(r"(\d{4}-\d{2}-\d{2}_\d{4})", filename)
+                    
+                    if datetime_match is None:
+                        warnings.warn(f"Could not extract datetime from: {filename}")
+                        continue
+                    
+                    # Parse datetime (format: YYYY-MM-DD_HHMM)
+                    datetime_str = datetime_match.group(1)
+                    date_part = re.search(r"\d{4}-\d{2}-\d{2}", datetime_str).group(0)
+                    time_part = re.search(r"\d{4}$", datetime_str).group(0)
+                    hour = int(time_part[:2])
+                    minute = int(time_part[2:])
+                    
+                    # Create datetime object
+                    file_datetime = datetime.strptime(
+                        f"{date_part} {hour:02d}:{minute:02d}", 
+                        "%Y-%m-%d %H:%M"
+                    )
+                    
+                    # Adjust timestamp: subtract 30 minutes so it occurs on the hour (00:00)
+                    file_datetime = file_datetime - timedelta(minutes=30)
+                    
+                    # Read CSV file
+                    try:
+                        csv_data = pd.read_csv(
+                            csv_file,
+                            dtype={
+                                'x': float,
+                                'y': float,
+                                'z': float,
+                                'mattype': str,
+                                'Wm2Front': float
+                            }
+                        )
+
+                        # Keep full resolution: average across the non-distance axis only.
+                        # - Setups 1-5 and 10: distance = BR `x`, average Wm2Front across `y` for each `x`
+                        # - Setups 6-9 and 11: distance = BR `y`, average Wm2Front across `x` for each `y`
+                        distance_axis = _br_distance_axis_for_setup(setup_num)
+                        if distance_axis not in csv_data.columns:
+                            raise KeyError(
+                                f"Expected column '{distance_axis}' in {csv_file.name}, "
+                                f"but found columns: {list(csv_data.columns)}"
+                            )
+
+                        # Average across the non-distance axis (y for setups 1-5,10; x for setups 6-9,11)
+                        # This keeps all distance points at full resolution
+                        aggregated = (
+                            csv_data
+                            .groupby(distance_axis, as_index=False)["Wm2Front"]
+                            .mean()
+                            .sort_values(distance_axis)
+                            .reset_index(drop=True)
+                        )
+                        
+                        # Rename distance_axis column to 'x' for consistency
+                        aggregated = aggregated.rename(columns={distance_axis: 'x'})
+                        
+                        # Add metadata columns
+                        aggregated['gid'] = int(gid)
+                        aggregated['setup'] = setup_num
+                        aggregated['datetime'] = file_datetime
+                        aggregated['data_source'] = 'bifacial_radiance'
+                        
+                        # Reorder columns
+                        aggregated = aggregated[['gid', 'setup', 'datetime', 'x', 'Wm2Front', 'data_source']]
+                        
+                        all_data.append(aggregated)
+                        
+                    except Exception as e:
+                        warnings.warn(f"Error reading {csv_file}: {e}")
+    
+    # Combine all data
+    if len(all_data) == 0:
+        raise ValueError("No data loaded. Check folder structure and file names.")
+    
+    combined_data = pd.concat(all_data, ignore_index=True)
+    
+    print(f"\nLoaded {len(combined_data)} rows of bifacial radiance data (full resolution)")
     print(f"Found {combined_data['gid'].nunique()} GIDs")
     print(f"Found {combined_data['setup'].nunique()} setups")
     print(f"Date range: {combined_data['datetime'].min()} to {combined_data['datetime'].max()}")
@@ -513,6 +688,7 @@ Examples:
   python consolidate_all_results.py validation_results
   python consolidate_all_results.py validation_results --base-path /path/to/folder
   python consolidate_all_results.py validation_results --output all_results.pkl
+  python consolidate_all_results.py validation_results --br-only-full-res
         """
     )
     
@@ -533,7 +709,7 @@ Examples:
         '--output',
         type=str,
         default=None,
-        help='Output pickle file name (defaults to "all_results.pkl")'
+        help='Output pickle file name (defaults to "all_results.pkl" or "br_full_resolution_results.pkl" if --br-only-full-res is used)'
     )
     
     parser.add_argument(
@@ -543,8 +719,40 @@ Examples:
         help='S3 path to zarr files directory (default: oedi-data-lake/inspire/agrivoltaics_irradiance/v1.0)'
     )
     
+    parser.add_argument(
+        '--br-only-full-res',
+        action='store_true',
+        help='Consolidate only bifacial radiance results at full resolution (100 points) without SAM results'
+    )
+    
     args = parser.parse_args()
     
+    # Handle BR-only full resolution mode
+    if args.br_only_full_res:
+        # Set default output filename if not provided
+        output_file = args.output if args.output else 'br_full_resolution_results.pkl'
+        
+        print("Consolidating bifacial radiance results at full resolution...")
+        print(f"Validation results folder: {args.folder_name}")
+        print(f"Base path: {args.base_path}")
+        print(f"Output file: {output_file}\n")
+        
+        # Consolidate BR data at full resolution
+        data = consolidate_br_results_full_resolution(
+            args.folder_name,
+            base_path=args.base_path
+        )
+        
+        # Write to pickle
+        print(f"\nWriting data to {output_file}...")
+        data.to_pickle(output_file)
+        
+        file_size = Path(output_file).stat().st_size
+        print(f"Done! Data exported to {output_file}")
+        print(f"File size: {file_size:,} bytes")
+        return
+    
+    # Default behavior: consolidate all results
     # Set default output filename if not provided
     output_file = args.output if args.output else 'all_results.pkl'
     

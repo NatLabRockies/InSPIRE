@@ -32,7 +32,8 @@ for SETUP in "${SETUPS[@]}"; do
         --setup "$SETUP" \
         --gid "$GID" \
         --data-source bifacial_radiance \
-        --output "$OUTPUT_DIR/setup_${SETUP}_heatmap_br.png"
+        --output "$OUTPUT_DIR/setup_${SETUP}_heatmap_br.png" \
+        --hour-start 5 --hour-end 18
     
     # Generate heatmap for pysam
     echo "Generating heatmap for setup $SETUP, pysam..."
@@ -41,16 +42,36 @@ for SETUP in "${SETUPS[@]}"; do
         --setup "$SETUP" \
         --gid "$GID" \
         --data-source pysam \
-        --output "$OUTPUT_DIR/setup_${SETUP}_heatmap_pysam.png"
+        --output "$OUTPUT_DIR/setup_${SETUP}_heatmap_pysam.png" \
+        --hour-start 5 --hour-end 18
 done
+
+# Generate full resolution BR heatmaps
+echo "Generating full resolution BR heatmaps..."
+BR_FULL_RES_FILE="br_full_resolution_results.pkl"
+
+if [ -f "$BR_FULL_RES_FILE" ]; then
+    for SETUP in "${SETUPS[@]}"; do
+        echo "Generating full resolution heatmap for setup $SETUP, bifacial_radiance..."
+        python plot_irradiance_heatmap.py \
+            --data-file "$BR_FULL_RES_FILE" \
+            --setup "$SETUP" \
+            --gid "$GID" \
+            --data-source bifacial_radiance \
+            --output "$OUTPUT_DIR/setup_${SETUP}_heatmap_br_full_res.png" \
+            --hour-start 5 --hour-end 18
+    done
+else
+    echo "Warning: $BR_FULL_RES_FILE not found. Skipping full resolution BR heatmaps."
+fi
 
 # Generate June 21 comparison plots for 9 am, noon, and 3 pm
 echo "Generating June 21 comparison plots..."
 
 TIMESTAMPS=(
-    "2023-06-21 09:00:00"
-    "2023-06-21 12:00:00"
-    "2023-06-21 15:00:00"
+    "2023-06-19 09:00:00"
+    "2023-06-19 12:00:00"
+    "2023-06-19 15:00:00"
 )
 
 for TIMESTAMP_STR in "${TIMESTAMPS[@]}"; do
