@@ -96,6 +96,18 @@ def plot_wm2front_vs_distance(
     # Figure size: 6.5" width x 3" height
     fig, axes = plt.subplots(3, 4, figsize=(6.5, 3), sharey=True)
     
+    # Format time for title (e.g., "9 am", "3 pm")
+    hour = target_datetime.hour
+    if hour == 0:
+        time_str = "12 am"
+    elif hour < 12:
+        time_str = f"{hour} am"
+    elif hour == 12:
+        time_str = "12 pm"
+    else:
+        time_str = f"{hour - 12} pm"
+    fig.suptitle(time_str, fontsize=10, fontweight='bold')
+    
     axes = axes.flatten()
     
     # Collect all data to determine shared axis limits
@@ -122,7 +134,8 @@ def plot_wm2front_vs_distance(
         
         if len(val_data) == 0 and len(pysam_data) == 0:
             ax.text(0.5, 0.5, f'Setup {setup}\nNo data', 
-                   ha='center', va='center', transform=ax.transAxes, fontsize=12)
+                   ha='center', va='center', transform=ax.transAxes, fontsize=8)
+            ax.set_title(f'{setup}', fontweight='bold', fontsize=8, pad=3)
             continue
         
         # Sort by x for plotting
@@ -143,10 +156,9 @@ def plot_wm2front_vs_distance(
             all_y_values.extend(pysam_data['Wm2Front'].values)
         
         # Formatting
+        ax.set_title(f'{setup}', fontweight='bold', fontsize=8, pad=3)
         ax.grid(True, alpha=0.3)
-        ax.tick_params(labelsize=12)  # Set tick label font size
-        # Remove x tick labels
-        ax.set_xticklabels([])
+        ax.tick_params(labelsize=8)  # Set tick label font size
         
         # Set x-axis limits for this subplot based on its own data
         if len(val_data) > 0 or len(pysam_data) > 0:
@@ -162,6 +174,14 @@ def plot_wm2front_vs_distance(
                 subplot_x_range = subplot_x_max - subplot_x_min
                 subplot_x_padding = 0.1 * subplot_x_range if subplot_x_range > 0 else 0.1
                 ax.set_xlim(subplot_x_min - subplot_x_padding, subplot_x_max + subplot_x_padding)
+                
+                # Set x ticks at min and max with labels based on setup number
+                ax.set_xticks([subplot_x_min - subplot_x_padding, subplot_x_max + subplot_x_padding])
+                # Set labels: "W"/"E" for setups 1-5 and 11, "S"/"N" for setups 6-10
+                if setup in [1, 2, 3, 4, 5, 11]:
+                    ax.set_xticklabels(['W', 'E'])
+                elif setup in [6, 7, 8, 9, 10]:
+                    ax.set_xticklabels(['S', 'N'])
     
     # Set shared y-axis limits based on all data (x-axes are set per subplot)
     if len(all_y_values) > 0:
@@ -178,8 +198,8 @@ def plot_wm2front_vs_distance(
         # Set y-axis limits on all axes (they're shared)
         for ax in axes[:11]:  # Only visible axes
             ax.set_ylim(y_limit_min, y_limit_max)
-            # Set y-axis ticks to only show min (0) and hardcoded max (800)
-            ax.set_yticks([0, 800])
+            # Set y-axis ticks to only show min (0) and hardcoded max (1000)
+            ax.set_yticks([0, 1000])
     
     # Create a single shared legend for the entire figure
     # Get handles and labels from the first subplot that has data
@@ -195,17 +215,17 @@ def plot_wm2front_vs_distance(
         # Turn off axes for the 12th subplot and use it for the legend
         axes[11].axis('off')
         # Place legend in the 12th subplot area (lower right corner)
-        axes[11].legend(handles, labels, loc='center', fontsize=10, frameon=True)
+        axes[11].legend(handles, labels, loc='center', fontsize=8, frameon=True)
     
     plt.tight_layout()
-    # Adjust layout to make room for the x-axis label at the bottom
-    plt.subplots_adjust(bottom=0.12)
+    # Adjust layout to make room for the x-axis label at the bottom and reduce vertical spacing
+    plt.subplots_adjust(bottom=0.12, top=0.89, hspace=0.6)
     
     # Add single x and y axis labels to the figure (after tight_layout to position correctly)
     # Position x-label lower to avoid overlap with tick labels
     fig.supxlabel('Location within row-to-row pitch (m)', fontsize=12, y=-0.02)
     # Position y-label to the left to avoid overlap
-    fig.supylabel('Ground Irradiance (W/m²)', fontsize=12, x=-0.02)
+    fig.supylabel('Ground Irradiance (W/m²)', fontsize=10, x=-0.02)
     
     # Save plot at 3" x 6" size (dpi will determine pixel resolution)
     if output_file is None:
