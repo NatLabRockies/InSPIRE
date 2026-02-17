@@ -1,6 +1,0 @@
-/home/tford/.conda-envs/geospatial/lib/python3.9/site-packages/distributed/node.py:182: UserWarning: Port 22118 is already in use.
-Perhaps you already have a cluster running?
-Hosting the HTTP server on port 38541 instead
-  warnings.warn(
-/home/tford/.conda-envs/geospatial/lib/python3.9/site-packages/xarray/core/dataset.py:277: UserWarning: The specified chunks separate the stored chunks along dimension "phony_dim_1" starting at index 500. This could degrade performance. Instead, consider rechunking after loading.
-  warnings.warn(

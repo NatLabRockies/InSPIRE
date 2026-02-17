@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools_scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inspire_agrivolt"
+description = " "
+maintainers = [{email = "tobin.ford@nrel.gov"}]
+license = {text = "BSD-3"}
+readme = "README.md"
+requires-python = ">=3.9.0"
+classifiers = [
+]
+keywords = [
+]
+dependencies = [
+    "NREL-PySAM==5.1.0",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+docs = [
+]
+test = [
+]
+all = [
+    "inspire_agrivolt[docs,test]",
+]
+
+[project.scripts]
+agrivolt_ground_irradiance = "inspire_agrivolt.main:ground_irradiance"
+
+[tool.setuptools.packages.find]
+include = ["inspire_agrivolt"]
+
+[tool.pytest.ini_options]
+testpaths = "tests"
+addopts = [
+    "-p no:warnings",
+    "--verbose",
+]

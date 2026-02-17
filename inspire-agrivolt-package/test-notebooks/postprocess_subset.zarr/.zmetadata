@@ -1,0 +1,307 @@
+{
+    "metadata": {
+        ".zattrs": {},
+        ".zgroup": {
+            "zarr_format": 2
+        },
+        "annual_energy_per_acre/.zarray": {
+            "chunks": [
+                100
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<f8",
+            "fill_value": "NaN",
+            "filters": null,
+            "order": "C",
+            "shape": [
+                10
+            ],
+            "zarr_format": 2
+        },
+        "annual_energy_per_acre/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "gid"
+            ]
+        },
+        "annual_energy_per_kWdc_installed/.zarray": {
+            "chunks": [
+                100
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<f8",
+            "fill_value": "NaN",
+            "filters": null,
+            "order": "C",
+            "shape": [
+                10
+            ],
+            "zarr_format": 2
+        },
+        "annual_energy_per_kWdc_installed/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "gid"
+            ]
+        },
+        "bedA/.zarray": {
+            "chunks": [
+                100,
+                8760
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<f8",
+            "fill_value": "NaN",
+            "filters": null,
+            "order": "C",
+            "shape": [
+                10,
+                8760
+            ],
+            "zarr_format": 2
+        },
+        "bedA/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "gid",
+                "time"
+            ]
+        },
+        "bedB/.zarray": {
+            "chunks": [
+                100,
+                8760
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<f8",
+            "fill_value": "NaN",
+            "filters": null,
+            "order": "C",
+            "shape": [
+                10,
+                8760
+            ],
+            "zarr_format": 2
+        },
+        "bedB/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "gid",
+                "time"
+            ]
+        },
+        "bedC/.zarray": {
+            "chunks": [
+                100,
+                8760
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<f8",
+            "fill_value": "NaN",
+            "filters": null,
+            "order": "C",
+            "shape": [
+                10,
+                8760
+            ],
+            "zarr_format": 2
+        },
+        "bedC/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "gid",
+                "time"
+            ]
+        },
+        "edgetoedge/.zarray": {
+            "chunks": [
+                100,
+                8760
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<f8",
+            "fill_value": "NaN",
+            "filters": null,
+            "order": "C",
+            "shape": [
+                10,
+                8760
+            ],
+            "zarr_format": 2
+        },
+        "edgetoedge/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "gid",
+                "time"
+            ]
+        },
+        "gid/.zarray": {
+            "chunks": [
+                15756
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<i8",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                10
+            ],
+            "zarr_format": 2
+        },
+        "gid/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "gid"
+            ]
+        },
+        "subarray1_dc_gross_per_acre/.zarray": {
+            "chunks": [
+                100,
+                8760
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<f8",
+            "fill_value": "NaN",
+            "filters": null,
+            "order": "C",
+            "shape": [
+                10,
+                8760
+            ],
+            "zarr_format": 2
+        },
+        "subarray1_dc_gross_per_acre/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "gid",
+                "time"
+            ]
+        },
+        "subarray1_dc_gross_per_kWdc_installed/.zarray": {
+            "chunks": [
+                100,
+                8760
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<f8",
+            "fill_value": "NaN",
+            "filters": null,
+            "order": "C",
+            "shape": [
+                10,
+                8760
+            ],
+            "zarr_format": 2
+        },
+        "subarray1_dc_gross_per_kWdc_installed/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "gid",
+                "time"
+            ]
+        },
+        "time/.zarray": {
+            "chunks": [
+                8760
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<i8",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                8760
+            ],
+            "zarr_format": 2
+        },
+        "time/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "time"
+            ],
+            "calendar": "proleptic_gregorian",
+            "units": "hours since 2001-01-01"
+        },
+        "underpannel/.zarray": {
+            "chunks": [
+                100,
+                8760
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<f8",
+            "fill_value": "NaN",
+            "filters": null,
+            "order": "C",
+            "shape": [
+                10,
+                8760
+            ],
+            "zarr_format": 2
+        },
+        "underpannel/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "gid",
+                "time"
+            ]
+        }
+    },
+    "zarr_consolidated_format": 1
+}

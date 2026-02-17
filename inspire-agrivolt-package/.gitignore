@@ -1,0 +1,6 @@
+# secondary gitignore 
+logs/
+
+.ipynb_checkpoints
+
+.ruff_cache
