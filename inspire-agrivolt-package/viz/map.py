@@ -1,9 +1,25 @@
+"""
+Generate publication maps
+
+
+Silvana Requests
+(?) cumulative GHI would be a good sanity check with the NSRDB mapts itself.
+(X) Average yearly ground irradiance for setup 1 (edge to edge) 
+( ) Shading factor for month of July for setup 1
+( ) Ground irradiance edge to edge setup 1 for 3 pm July 21st. (I suspect this one is going to show the effect of the timezones we saw initially)
+
+Kate Requests
+( ) annual PV production/acre
+( ) % farmable land per acre (variable for fixed tilt only)
+"""
+
 import argparse
 import zarr
 import xarray as xr
 import matplotlib.pyplot as plt
 from pathlib import Path
 import pandas as pd
+from pandas.api.types import is_datetime64_any_dtype
 
 import dask.array as da
 import dask.dataframe as dd
@@ -109,18 +125,20 @@ config_paths = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Render irradiance maps for one configuration or a range of configurations."
+        description="Render irradiance maps for the built-in visualization modes."
     )
     parser.add_argument(
-        "config",
-        nargs="?",
-        type=int,
-        help="Single configuration number to render.",
-    )
-    parser.add_argument(
-        "--dim",
-        default="edgetoedge",
-        help="Dataset variable to render.",
+        "--mode",
+        choices=(
+            "mean-edgetoedge",
+            "july-shading-factor-setup1",
+            "july-21-15-edgetoedge-setup1",
+        ),
+        default="mean-edgetoedge",
+        help=(
+            "Field selection to render. "
+            "'mean-edgetoedge' preserves the current behavior."
+        ),
     )
     parser.add_argument(
         "--start-config",
@@ -137,24 +155,129 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def single(conf_ds: xr.Dataset, i: int, dim: str) -> None:
-    print("converting gids to lat lon...")
-    mean_subset = pvdeg.utilities.gids_dataset_to_coords_dataset(
-        conf_ds[dim].mean(dim="time"),
-        gids_mapping_df
-    )
+def build_fallback_hourly_index(size: int) -> pd.DatetimeIndex:
+    if size != 8760:
+        raise ValueError(
+            "Expected 8760 hourly steps when reconstructing a fallback time index, "
+            f"but received {size}."
+        )
+    return pd.date_range("2001-01-01 00:00:00", periods=size, freq="1h")
 
-    # mean_field = conf_ds[dim].mean(dim="time")
-    # print("mean range:", float(mean_field.min().compute()), float(mean_field.max().compute()))
-    # print("raw range :", float(conf_ds[dim].min().compute()), float(conf_ds[dim].max().compute()))
-    
-    # lon2d, lat2d = xr.broadcast(mean_subset.longitude, mean_subset.latitude)
+
+def get_hourly_index(conf_ds: xr.Dataset) -> pd.DatetimeIndex:
+    if "time" not in conf_ds.coords:
+        raise ValueError("Dataset is missing a 'time' coordinate.")
+
+    time_values = conf_ds["time"].values
+    if is_datetime64_any_dtype(time_values):
+        return pd.DatetimeIndex(time_values)
+
+    print(
+        "time coordinate is not datetime-like; assuming local hourly indexing "
+        "from 2001-01-01 00:00:00 through 2001-12-31 23:00:00"
+    )
+    return build_fallback_hourly_index(conf_ds.sizes["time"])
+
+
+def get_time_mask(conf_ds: xr.Dataset, *, month: int | None = None) -> xr.DataArray:
+    hourly_index = get_hourly_index(conf_ds)
+    mask = pd.Series(True, index=hourly_index)
+
+    if month is not None:
+        mask &= hourly_index.month == month
+
+    return xr.DataArray(mask.to_numpy(), dims=("time",), coords={"time": conf_ds["time"]})
+
+
+def get_time_position(conf_ds: xr.Dataset, timestamp: str) -> int:
+    hourly_index = get_hourly_index(conf_ds)
+    target_time = pd.Timestamp(timestamp)
+
+    try:
+        return hourly_index.get_loc(target_time)
+    except KeyError as exc:
+        raise ValueError(f"{target_time} is not available in the dataset time index.") from exc
+
+
+def mean_edgetoedge_over_time(conf_ds: xr.Dataset) -> xr.DataArray:
+    return conf_ds["edgetoedge"].mean(dim="time").rename("edgetoedge")
+
+
+def july_shading_factor_setup1(conf_ds: xr.Dataset) -> xr.DataArray:
+    july_mask = get_time_mask(conf_ds, month=7)
+    july_edgetoedge = conf_ds["edgetoedge"].where(july_mask, drop=True).mean(dim="time")
+    july_ghi = conf_ds["ghi"].where(july_mask, drop=True).mean(dim="time")
+    shading_factor = (july_edgetoedge / july_ghi).rename("shading_factor")
+    return shading_factor
+
+
+def july_21_15_edgetoedge_setup1(conf_ds: xr.Dataset) -> xr.DataArray:
+    time_position = get_time_position(conf_ds, "2001-07-21 15:00:00")
+    return conf_ds["edgetoedge"].isel(time=time_position).rename("edgetoedge")
+
+
+def select_field(conf_ds: xr.Dataset, *, config_number: int, mode: str) -> xr.DataArray:
+    if mode == "mean-edgetoedge":
+        return mean_edgetoedge_over_time(conf_ds)
+
+    if config_number != 1:
+        raise ValueError(f"{mode} is only defined for setup/configuration 1.")
+
+    if mode == "july-shading-factor-setup1":
+        return july_shading_factor_setup1(conf_ds)
+
+    if mode == "july-21-15-edgetoedge-setup1":
+        return july_21_15_edgetoedge_setup1(conf_ds)
+
+    raise ValueError(f"Unsupported render mode: {mode}")
+
+
+def get_plot_metadata(mode: str, field_name: str) -> dict[str, str]:
+    if mode == "mean-edgetoedge":
+        return {
+            "title": "Mean edge-to-edge irradiance over time",
+            "clabel": "Mean edge-to-edge irradiance [W/m²]",
+        }
+
+    if mode == "july-shading-factor-setup1":
+        return {
+            "title": "July shading factor for setup 1",
+            "clabel": "Shading factor",
+        }
+
+    if mode == "july-21-15-edgetoedge-setup1":
+        return {
+            "title": "Setup 1 edge-to-edge irradiance on July 21 at 3 PM",
+            "clabel": "Edge-to-edge irradiance [W/m²]",
+        }
+
+    return {
+        "title": field_name,
+        "clabel": field_name,
+    }
+
+
+def get_output_stem(mode: str) -> str:
+    if mode == "mean-edgetoedge":
+        return "inferno-fullres"
+    return f"{mode}-inferno-fullres"
+
+
+def single(conf_ds: xr.Dataset, i: int, mode: str) -> None:
+    print("converting gids to lat lon...")
+    selected_field = select_field(
+        conf_ds,
+        config_number=i,
+        mode=mode,
+    )
+    subset = pvdeg.utilities.gids_dataset_to_coords_dataset(selected_field, gids_mapping_df)
+
     # broadcast in the order of da dims, then force exact dim order match
-    lat2d, lon2d = xr.broadcast(mean_subset.latitude, mean_subset.longitude)
-    lon2d = lon2d.transpose(*mean_subset.dims)
-    lat2d = lat2d.transpose(*mean_subset.dims)
-    
-    arr = mean_subset.assign_coords(
+    lat2d, lon2d = xr.broadcast(subset.latitude, subset.longitude)
+    lon2d = lon2d.transpose(*subset.dims)
+    lat2d = lat2d.transpose(*subset.dims)
+
+    arr = subset.assign_coords(
         longitude_2d=lon2d,
         latitude_2d=lat2d,
     )
@@ -166,7 +289,7 @@ def single(conf_ds: xr.Dataset, i: int, dim: str) -> None:
     plot = arr.hvplot.quadmesh(
         x="longitude_2d",
         y="latitude_2d",
-        z=dim,
+        z=selected_field.name,
         geo=True,
         crs=ccrs.PlateCarree(),
         projection=ccrs.AlbersEqualArea(
@@ -187,17 +310,16 @@ def single(conf_ds: xr.Dataset, i: int, dim: str) -> None:
         ylim=(ymin, ymax),
     )
 
-    # Match the color scale to the actual field being plotted: the time-mean map
-    # for this configuration, not the full underlying time series.
-    vmin = float(mean_subset.min().compute())
-    vmax = float(mean_subset.max().compute())
+    vmin = float(subset.min().compute())
+    vmax = float(subset.max().compute())
+    metadata = get_plot_metadata(mode, selected_field.name)
 
     driver = make_firefox_driver()
     plot_state = hv.renderer("bokeh").get_plot(plot).state
     finalize_bokeh_state(
         plot_state,
-        title="Mean edge-to-edge irradiance [W/m²]",
-        clabel="Mean edge-to-edge value",
+        title=metadata["title"],
+        clabel=metadata["clabel"],
         cmap="inferno",
         vmin=vmin,
         vmax=vmax,
@@ -205,14 +327,14 @@ def single(conf_ds: xr.Dataset, i: int, dim: str) -> None:
     
     export_png(
         plot_state,
-        filename=f"conf{i}-inferno-fullres.png",
+        filename=f"conf{i}-{get_output_stem(mode)}.png",
         webdriver=driver,
         timeout=30,
     )
     
     driver.quit()
 
-def render_config(config_number: int, dim: str) -> None:
+def render_config(config_number: int, mode: str) -> None:
     if config_number not in config_paths:
         raise ValueError(
             f"Configuration {config_number} was requested, but only "
@@ -221,21 +343,18 @@ def render_config(config_number: int, dim: str) -> None:
 
     print(f"running config {config_number}")
     conf_data = xr.open_zarr(config_paths[config_number])
-    single(conf_ds=conf_data, i=config_number, dim=dim)
+    single(conf_ds=conf_data, i=config_number, mode=mode)
 
 
 def main():
     args = parse_args()
 
-    if args.config is not None:
-        render_config(args.config, dim=args.dim)
+    if args.mode == "mean-edgetoedge":
+        for config_number in config_paths:
+            render_config(config_number, mode=args.mode)
         return
 
-    if args.start_config > args.stop_config:
-        raise ValueError("--start-config must be less than or equal to --stop-config")
-
-    for config_number in range(args.start_config, args.stop_config + 1):
-        render_config(config_number, dim=args.dim)
+    render_config(1, mode=args.mode)
 
 if __name__ == "__main__":
     main()
