@@ -5,8 +5,8 @@ Generate publication maps
 Silvana Requests
 (?) cumulative GHI would be a good sanity check with the NSRDB mapts itself.
 (X) Average yearly ground irradiance for setup 1 (edge to edge) 
-( ) Shading factor for month of July for setup 1
-( ) Ground irradiance edge to edge setup 1 for 3 pm July 21st. (I suspect this one is going to show the effect of the timezones we saw initially)
+(X) Shading factor for month of July for setup 1
+(X) Ground irradiance edge to edge setup 1 for 3 pm July 21st. (I suspect this one is going to show the effect of the timezones we saw initially)
 
 Kate Requests
 ( ) annual PV production/acre
