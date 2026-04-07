@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-CONFIG="${1:?usage: sbatch viz/submit_map.slurm <config>}"
+MODE="${1:-mean-edgetoedge}"
 REPO_ROOT="${SLURM_SUBMIT_DIR:?SLURM_SUBMIT_DIR is not set}"
 
 cd "$REPO_ROOT"
@@ -24,4 +24,4 @@ ENV_NAME="$(get_inspire_agrivolt_conda_env)"
 module load anaconda3
 source activate "$ENV_NAME"
 
-srun python viz/map.py "$CONFIG"
+srun python viz/map.py --mode "$MODE"

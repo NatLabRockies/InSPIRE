@@ -7,10 +7,11 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import xarray as xr
 
+from map import select_field
+
 
 LIVE_DATA_COPY = Path("/projects/inspire/PySAM-MAPS/v1.2/")
 DATA_DIR = LIVE_DATA_COPY / "final-backup"
-DEFAULT_DIM = "edgetoedge"
 DEFAULT_CMAP = "inferno"
 DEFAULT_LABEL = "Mean edge-to-edge value"
 DEFAULT_START_CONFIG = 1
@@ -34,9 +35,17 @@ def parse_args() -> argparse.Namespace:
         help="Directory to write standalone colorbar images into.",
     )
     parser.add_argument(
-        "--dim",
-        default=DEFAULT_DIM,
-        help="Variable name to summarize and colorize.",
+        "--mode",
+        choices=(
+            "mean-edgetoedge",
+            "july-shading-factor-setup1",
+            "july-21-15-edgetoedge-setup1",
+        ),
+        default="mean-edgetoedge",
+        help=(
+            "Field selection to summarize for the colorbar. "
+            "'mean-edgetoedge' preserves the current behavior."
+        ),
     )
     parser.add_argument(
         "--cmap",
@@ -69,11 +78,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def compute_plot_range(conf_path: Path, dim: str) -> tuple[float, float]:
+def compute_plot_range(conf_path: Path, config_number: int, mode: str) -> tuple[float, float]:
     conf_ds = xr.open_zarr(conf_path)
-    mean_field = conf_ds[dim].mean(dim="time")
-    vmin = float(mean_field.min().compute())
-    vmax = float(mean_field.max().compute())
+    field = select_field(
+        conf_ds,
+        config_number=config_number,
+        mode=mode,
+    )
+    vmin = float(field.min().compute())
+    vmax = float(field.max().compute())
     return vmin, vmax
 
 
@@ -114,12 +127,24 @@ def write_colorbar(
     plt.close(fig)
 
 
+def get_output_name(config_number: int, cmap: str, mode: str) -> str:
+    if mode == "mean-edgetoedge":
+        return f"config-{config_number:02d}-{cmap}-colorbar.png"
+    return f"config-{config_number:02d}-{mode}-{cmap}-colorbar.png"
+
+
 def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.start_config > args.stop_config:
         raise ValueError("--start-config must be less than or equal to --stop-config")
+
+    if args.mode != "mean-edgetoedge" and (args.start_config != 1 or args.stop_config != 1):
+        raise ValueError(
+            f"--mode={args.mode} only supports setup/configuration 1. "
+            "Use --start-config 1 --stop-config 1."
+        )
 
     config_paths = load_config_paths(args.data_dir)
 
@@ -133,8 +158,16 @@ def main() -> None:
             )
 
         conf_path = config_paths[config_number]
-        vmin, vmax = compute_plot_range(conf_path, args.dim)
-        output_path = args.output_dir / f"config-{config_number:02d}-{args.cmap}-colorbar.png"
+        vmin, vmax = compute_plot_range(
+            conf_path,
+            config_number=config_number,
+            mode=args.mode,
+        )
+        output_path = args.output_dir / get_output_name(
+            config_number=config_number,
+            cmap=args.cmap,
+            mode=args.mode,
+        )
         print(f"writing {output_path.name}: vmin={vmin}, vmax={vmax}")
         write_colorbar(
             output_path,
