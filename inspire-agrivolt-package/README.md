@@ -66,6 +66,14 @@ This section describes how to create dataset using the scripts in `scripts/`. It
         │   ├── 10_pvsamv1.json
         ├── 11
         │   ├── 11_pvsamv1.json
+    
+    **SAM config directories use the original config names rather than the publication names see the table in the deployment section for more information.**
+
+    **DO NOT ATTEMPT TO CHANGE THESE TO MATCH THE PUBLICATION NAMES**. The pipeline handles this for us during the Deployment step.
+
+    If you reorder configs, it will break hardcoded assumptions about what each of the configs mean within the code. If you add a new config you will need to go in and modify the code to support the new config. **DO NOT CHANGE THE existing configs' meaning in the code or configuration files' names, this will cause a nightmarish headache.** Instead, add new configs by incrementing the highest existing number and updating the available configs in the code. 
+    
+    This is the most fragile part of the pipeline because assume configs based on their filepaths and filenames so follow the existing convention and create new configs as the next greatest integer at `InSPIRE/Studies/USMap_Doubleday_2024/SAM/XX/XX_pvsamv1.json`.
 
 3. INSPIRE_AGRIVOLT_MODEL_OUTS_DIR
     Set to the path of the desired agrivoltaic irradiance outputs directory, e.g:
@@ -148,10 +156,9 @@ The script updates existing zarrs by appending a new data variable that contains
 ### 4. Deployment (OPTIONAL)
 Uploading the final result to OpenEI on S3.
 
-We want to deploy the final dataset versions to S3. AWS CLI is too slow so we will use `scripts/submit_upload_zarrs.slurm`. 
+We want to deploy the final dataset versions to S3. AWS CLI is too slow so we will use `scripts/submit_s3_upload_zarrs.slurm`. 
 
 **Note: this script renames zarr configs when they are uploaded to s3. It does not change them in-place (on kestrel)**
-
 
 
 | Config name                                      | Original config | Updated config name |
@@ -168,6 +175,11 @@ We want to deploy the final dataset versions to S3. AWS CLI is too slow so we wi
 | Fixed Tilt (Double Pitch)                        | **10**          | **11**              |
 | Fixed Tilt (Conventional, ground clearance 0.5m) | **11**          | **06**              |
 
+**As a result, the names living on the kestrel projects directory exist as the original config names, not the updated config names used in the publication nomenclature.**  
+**AGAIN: the files in /projects/inspire/PySAM-MAPS/v1.2/final-backup/ use the original config names rather than the publication name**  
+**The only location where files follow the updated names is after they are uploaded to the OEDI data lake (S3) with submit_s3_upload_zarrs.slurm.**  
+
+**If you choose to regenerate files at any point using the above pipeline they will be created with the original config names then swapped to the appropriate (publication nomenclature) names only when the `scripts/submit_s3_upload_zarrs.slurm` is used**.
 
 ## inspire-agrivolt CLI
 `inspire-agrivolt` defines a cli interface run the PySAM wrapper over SAM configs and postprocess them. These utilities are wrapped in scripts which allow for batch processing for dataset creation. Most users should not need to interact with the inspire_agrivolt python source to run the dataset.
