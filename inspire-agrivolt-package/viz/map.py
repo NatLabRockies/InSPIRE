@@ -1,7 +1,31 @@
 """
 Generate publication maps
 
+Iteration 2
+------------
 
+( ) july shading factor conf 1
+( ) july shading factor conf 6
+( ) july shading factor conf 11
+
+( ) [uniform cbar range] july shading factor conf 1
+( ) [uniform cbar range] july shading factor conf 6
+( ) [uniform cbar range] july shading factor conf 11
+
+( ) Annual insolation conf 1
+( ) Annual insolation conf 6
+( ) Annual insolation conf 11
+
+( ) [uniform cbar range] annual insolation conf 1
+( ) [uniform cbar range] annual insolation conf 6
+( ) [uniform cbar range] annual insolation conf 11
+
+*higher res borders*
+*great lakes coloring removed* => photoshop this out
+
+
+Iteration 1
+-----------
 Silvana Requests
 (?) cumulative GHI would be a good sanity check with the NSRDB mapts itself.
 (X) Average yearly ground irradiance for setup 1 (edge to edge) 
@@ -10,16 +34,18 @@ Silvana Requests
 
 Kate Requests
 ( ) annual PV production/acre
-( ) % farmable land per acre (variable for fixed tilt only)
+(X) % farmable land per acre (variable for fixed tilt only)
 """
 
 import argparse
+import warnings
 import zarr
 import xarray as xr
 import matplotlib.pyplot as plt
 from pathlib import Path
 import pandas as pd
 from pandas.api.types import is_datetime64_any_dtype
+from zoneinfo import ZoneInfo
 
 import dask.array as da
 import dask.dataframe as dd
@@ -41,6 +67,15 @@ from bokeh.io import export_png, export_svgs
 import hvplot.xarray  # noqa
 import cartopy.crs as ccrs
 import numpy as np
+from name_map import (
+    convert_kestrel_name_to_published_name,
+    convert_published_name_to_kestrel_name,
+)
+
+try:
+    from timezonefinder import TimezoneFinder
+except ImportError:  # pragma: no cover - optional dependency on the cluster
+    TimezoneFinder = None
 
 
 def mpl_cmap_to_palette(name: str, n: int = 256) -> list[str]:
@@ -131,8 +166,9 @@ def parse_args() -> argparse.Namespace:
         "--mode",
         choices=(
             "mean-edgetoedge",
-            "july-shading-factor-setup1",
-            "july-21-15-edgetoedge-setup1",
+            "farmable-land-percent",
+            "july-shading-factor",
+            "july-21-15-edgetoedge",
         ),
         default="mean-edgetoedge",
         help=(
@@ -141,18 +177,50 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--start-config",
+        "--configs",
         type=int,
-        default=1,
-        help="First configuration number to render, inclusive.",
+        nargs="+",
+        required=True,
+        help="Configuration numbers to render.",
     )
     parser.add_argument(
-        "--stop-config",
-        type=int,
-        default=11,
-        help="Last configuration number to render, inclusive.",
+        "--config-names",
+        choices=("kestrel-names", "publication-names"),
+        required=True,
+        help=(
+            "Whether --configs are the original Kestrel/on-disk names or the "
+            "publication names."
+        ),
     )
     return parser.parse_args()
+
+
+def resolve_to_kestrel_and_publication_config_numbers(
+    requested_configs: list[int],
+    *,
+    config_names: str,
+) -> list[tuple[int, int]]:
+    if config_names == "publication-names":
+        warnings.warn(
+            "Interpreting --configs as publication names and mapping them to "
+            "Kestrel/on-disk names before loading zarr stores.",
+            stacklevel=2,
+        )
+        return [
+            (convert_published_name_to_kestrel_name(config_number), config_number)
+            for config_number in requested_configs
+        ]
+
+    warnings.warn(
+        "Interpreting --configs as Kestrel/on-disk names. Output filenames will "
+        "use the corresponding publication names, which may differ. See the "
+        "inspire-agrivolt-package README.md deployment section for details.",
+        stacklevel=2,
+    )
+    return [
+        (config_number, convert_kestrel_name_to_published_name(config_number))
+        for config_number in requested_configs
+    ]
 
 
 def build_fallback_hourly_index(size: int) -> pd.DatetimeIndex:
@@ -203,7 +271,7 @@ def mean_edgetoedge_over_time(conf_ds: xr.Dataset) -> xr.DataArray:
     return conf_ds["edgetoedge"].mean(dim="time").rename("edgetoedge")
 
 
-def july_shading_factor_setup1(conf_ds: xr.Dataset) -> xr.DataArray:
+def july_shading_factor(conf_ds: xr.Dataset) -> xr.DataArray:
     july_mask = get_time_mask(conf_ds, month=7)
     july_edgetoedge = conf_ds["edgetoedge"].where(july_mask, drop=True).mean(dim="time")
     july_ghi = conf_ds["ghi"].where(july_mask, drop=True).mean(dim="time")
@@ -211,23 +279,101 @@ def july_shading_factor_setup1(conf_ds: xr.Dataset) -> xr.DataArray:
     return shading_factor
 
 
-def july_21_15_edgetoedge_setup1(conf_ds: xr.Dataset) -> xr.DataArray:
-    time_position = get_time_position(conf_ds, "2001-07-21 15:00:00")
-    return conf_ds["edgetoedge"].isel(time=time_position).rename("edgetoedge")
+def get_gid_lat_lon(conf_ds: xr.Dataset) -> pd.DataFrame:
+    gids = pd.Index(conf_ds["gid"].values, name="gid")
+    gid_subset = gids_mapping_df.reindex(gids)
+
+    if gid_subset[["latitude", "longitude"]].isna().any().any():
+        raise ValueError("Missing latitude/longitude for one or more gids in the mapping file.")
+
+    return gid_subset[["latitude", "longitude"]]
 
 
-def select_field(conf_ds: xr.Dataset, *, config_number: int, mode: str) -> xr.DataArray:
+def approximate_timezone_name(longitude: float) -> str:
+    if longitude >= -82.5:
+        return "America/New_York"
+    if longitude >= -97.5:
+        return "America/Chicago"
+    if longitude >= -112.5:
+        return "America/Denver"
+    if longitude >= -127.5:
+        return "America/Los_Angeles"
+    return "America/Anchorage"
+
+
+def get_timezone_names_for_gids(conf_ds: xr.Dataset) -> pd.Series:
+    gid_lat_lon = get_gid_lat_lon(conf_ds)
+
+    if TimezoneFinder is None:
+        print(
+            "timezonefinder is unavailable; approximating local timezones from longitude bands"
+        )
+        timezone_names = gid_lat_lon["longitude"].map(approximate_timezone_name)
+    else:
+        timezone_finder = TimezoneFinder(in_memory=True)
+
+        def lookup_timezone(row: pd.Series) -> str:
+            timezone_name = timezone_finder.timezone_at(
+                lng=float(row["longitude"]),
+                lat=float(row["latitude"]),
+            )
+            if timezone_name is None:
+                timezone_name = approximate_timezone_name(float(row["longitude"]))
+            return timezone_name
+
+        timezone_names = gid_lat_lon.apply(lookup_timezone, axis=1)
+
+    timezone_names.index = gid_lat_lon.index
+    return timezone_names
+
+
+def get_local_time_positions_for_gids(conf_ds: xr.Dataset, local_timestamp: str) -> xr.DataArray:
+    hourly_index = get_hourly_index(conf_ds)
+    timezone_names = get_timezone_names_for_gids(conf_ds)
+    local_time = pd.Timestamp(local_timestamp)
+
+    time_positions = pd.Series(index=timezone_names.index, dtype=np.int64)
+
+    for timezone_name in timezone_names.unique():
+        utc_time = local_time.tz_localize(ZoneInfo(timezone_name)).tz_convert("UTC").tz_localize(None)
+        try:
+            time_position = hourly_index.get_loc(utc_time)
+        except KeyError as exc:
+            raise ValueError(
+                f"UTC time {utc_time} derived from local time {local_time} "
+                f"for timezone {timezone_name} is not available in the dataset."
+            ) from exc
+
+        time_positions.loc[timezone_names == timezone_name] = int(time_position)
+
+    return xr.DataArray(
+        time_positions.to_numpy(),
+        dims=("gid",),
+        coords={"gid": conf_ds["gid"]},
+    )
+
+
+def july_21_15_edgetoedge_setup(conf_ds: xr.Dataset) -> xr.DataArray:
+    time_positions = get_local_time_positions_for_gids(conf_ds, "2001-07-21 15:00:00")
+    return conf_ds["edgetoedge"].isel(time=time_positions).rename("edgetoedge")
+
+
+def farmable_land_percent_per_acre(conf_ds: xr.Dataset) -> xr.DataArray:
+    return conf_ds["farmable_land_percent"].rename("farmable_land_percent")
+
+
+def select_field(conf_ds: xr.Dataset, *, mode: str) -> xr.DataArray:
     if mode == "mean-edgetoedge":
         return mean_edgetoedge_over_time(conf_ds)
 
-    if config_number != 1:
-        raise ValueError(f"{mode} is only defined for setup/configuration 1.")
+    if mode == "farmable-land-percent":
+        return farmable_land_percent_per_acre(conf_ds)
 
-    if mode == "july-shading-factor-setup1":
-        return july_shading_factor_setup1(conf_ds)
+    if mode == "july-shading-factor":
+        return july_shading_factor(conf_ds)
 
-    if mode == "july-21-15-edgetoedge-setup1":
-        return july_21_15_edgetoedge_setup1(conf_ds)
+    if mode == "july-21-15-edgetoedge":
+        return july_21_15_edgetoedge_setup(conf_ds)
 
     raise ValueError(f"Unsupported render mode: {mode}")
 
@@ -239,15 +385,21 @@ def get_plot_metadata(mode: str, field_name: str) -> dict[str, str]:
             "clabel": "Mean edge-to-edge irradiance [W/m²]",
         }
 
-    if mode == "july-shading-factor-setup1":
+    if mode == "farmable-land-percent":
         return {
-            "title": "July shading factor for setup 1",
+            "title": "Farmable land percent per acre",
+            "clabel": "Farmable land percent [%]",
+        }
+
+    if mode == "july-shading-factor":
+        return {
+            "title": "July shading factor",
             "clabel": "Shading factor",
         }
 
-    if mode == "july-21-15-edgetoedge-setup1":
+    if mode == "july-21-15-edgetoedge":
         return {
-            "title": "Setup 1 edge-to-edge irradiance on July 21 at 3 PM",
+            "title": "Setup edge-to-edge irradiance on July 21 at 3 PM",
             "clabel": "Edge-to-edge irradiance [W/m²]",
         }
 
@@ -263,11 +415,17 @@ def get_output_stem(mode: str) -> str:
     return f"{mode}-inferno-fullres"
 
 
-def single(conf_ds: xr.Dataset, i: int, mode: str) -> None:
+def single(
+    conf_ds: xr.Dataset,
+    *,
+    kestrel_config_number: int,
+    publication_config_number: int,
+    mode: str,
+) -> None:
     print("converting gids to lat lon...")
     selected_field = select_field(
         conf_ds,
-        config_number=i,
+        # config_number=publication_config_number,
         mode=mode,
     )
     subset = pvdeg.utilities.gids_dataset_to_coords_dataset(selected_field, gids_mapping_df)
@@ -299,8 +457,12 @@ def single(conf_ds: xr.Dataset, i: int, mode: str) -> None:
         ),
         project=True,
         rasterize=True,
-        coastline=True,
-        features=['states', 'borders'],
+        # coastline=True,
+        # features=['states', 'borders'],
+        features={
+            'states':'10m',
+            'borders':'10m',
+        },
         cmap="inferno",
         width=4000,
         height=2400,
@@ -324,37 +486,58 @@ def single(conf_ds: xr.Dataset, i: int, mode: str) -> None:
         vmin=vmin,
         vmax=vmax,
     )
+
+    fname = f"conf{publication_config_number}-{get_output_stem(mode)}.png"
     
     export_png(
         plot_state,
-        filename=f"conf{i}-{get_output_stem(mode)}.png",
+        filename=fname,
         webdriver=driver,
         timeout=30,
     )
+    print("saved to", fname)
     
     driver.quit()
 
-def render_config(config_number: int, mode: str) -> None:
-    if config_number not in config_paths:
+def render_config(
+    *,
+    kestrel_config_number: int,
+    publication_config_number: int,
+    mode: str,
+) -> None:
+    if kestrel_config_number not in config_paths:
         raise ValueError(
-            f"Configuration {config_number} was requested, but only "
+            f"Kestrel configuration {kestrel_config_number} was requested, but only "
             f"{min(config_paths)} through {max(config_paths)} are available."
         )
 
-    print(f"running config {config_number}")
-    conf_data = xr.open_zarr(config_paths[config_number])
-    single(conf_ds=conf_data, i=config_number, mode=mode)
+    print(
+        f"running publication config {publication_config_number} "
+        f"from Kestrel config {kestrel_config_number}"
+    )
+    conf_data = xr.open_zarr(config_paths[kestrel_config_number])
+    single(
+        conf_ds=conf_data,
+        kestrel_config_number=kestrel_config_number,
+        publication_config_number=publication_config_number,
+        mode=mode,
+    )
 
 
 def main():
     args = parse_args()
 
-    if args.mode == "mean-edgetoedge":
-        for config_number in config_paths:
-            render_config(config_number, mode=args.mode)
-        return
+    requested_configs = resolve_to_kestrel_and_publication_config_numbers(
+        args.configs,
+        config_names=args.config_names,
+    )
 
-    render_config(1, mode=args.mode)
+    for kestrel_config_number, publication_config_number in requested_configs:
+        render_config(
+            kestrel_config_number=kestrel_config_number,
+            publication_config_number=publication_config_number,
+            mode=args.mode,
+        )
 
 if __name__ == "__main__":
     main()

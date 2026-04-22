@@ -23,17 +23,17 @@ The only location where files follow the updated names is after they are uploade
  
 # kestrel name : published name
 KESTREL_NAME_TO_PUBLISHED_NAME_MAP = {
-    01 : 01,
-    02 : 02,
-    03 : 03,
-    04 : 04,
-    05 : 05,
-    06 : 07,
-    07 : 08,
-    08 : 09,
-    09 : 10,
-    10 : 11,
-    11 : 06,
+    1: 1,
+    2: 2,
+    3: 3,
+    4: 4,
+    5: 5,
+    6: 7,
+    7: 8,
+    8: 9,
+    9: 10,
+    10: 11,
+    11: 6,
 }
 
 PUBLISHED_NAME_TO_KESTREL_NAME_MAP = {value: key for key, value in KESTREL_NAME_TO_PUBLISHED_NAME_MAP.items()}
@@ -44,4 +44,4 @@ def convert_published_name_to_kestrel_name(published_name: int) -> int:
 
 def convert_kestrel_name_to_published_name(kestrel_name: int) -> int:
     """Take old config name/number and convert it to the published (new) config name/number """
-    return PUBLISHED_NAME_TO_KESTREL_NAME_MAP[kestrel_name]
+    return KESTREL_NAME_TO_PUBLISHED_NAME_MAP[kestrel_name]

@@ -6,16 +6,19 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import xarray as xr
+import warnings
 
 from map import select_field
+from name_map import (
+    convert_kestrel_name_to_published_name,
+    convert_published_name_to_kestrel_name,
+)
 
 
 LIVE_DATA_COPY = Path("/projects/inspire/PySAM-MAPS/v1.2/")
 DATA_DIR = LIVE_DATA_COPY / "final-backup"
 DEFAULT_CMAP = "inferno"
 DEFAULT_LABEL = "Mean edge-to-edge value"
-DEFAULT_START_CONFIG = 1
-DEFAULT_STOP_CONFIG = 11
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,7 +41,8 @@ def parse_args() -> argparse.Namespace:
         "--mode",
         choices=(
             "mean-edgetoedge",
-            "july-shading-factor-setup1",
+            "farmable-land-percent",
+            "july-shading-factor",
             "july-21-15-edgetoedge-setup1",
         ),
         default="mean-edgetoedge",
@@ -64,16 +68,20 @@ def parse_args() -> argparse.Namespace:
         help="Standalone colorbar orientation.",
     )
     parser.add_argument(
-        "--start-config",
+        "--configs",
         type=int,
-        default=DEFAULT_START_CONFIG,
-        help="First configuration number to render, inclusive.",
+        nargs="+",
+        required=True,
+        help="Configuration numbers to render.",
     )
     parser.add_argument(
-        "--stop-config",
-        type=int,
-        default=DEFAULT_STOP_CONFIG,
-        help="Last configuration number to render, inclusive.",
+        "--config-names",
+        choices=("kestrel-names", "publication-names"),
+        required=True,
+        help=(
+            "Whether --configs are the original Kestrel/on-disk names or the "
+            "publication names."
+        ),
     )
     return parser.parse_args()
 
@@ -96,6 +104,34 @@ def load_config_paths(data_dir: Path) -> dict[int, Path]:
         config_number: conf_path
         for config_number, conf_path in enumerate(confs, start=1)
     }
+
+
+def resolve_config_names(
+    requested_configs: list[int],
+    *,
+    config_names: str,
+) -> list[tuple[int, int]]:
+    if config_names == "publication-names":
+        warnings.warn(
+            "Interpreting --configs as publication names and mapping them to "
+            "Kestrel/on-disk names before loading zarr stores.",
+            stacklevel=2,
+        )
+        return [
+            (convert_published_name_to_kestrel_name(config_number), config_number)
+            for config_number in requested_configs
+        ]
+
+    warnings.warn(
+        "Interpreting --configs as Kestrel/on-disk names. Output filenames will "
+        "use the corresponding publication names, which may differ. See the "
+        "inspire-agrivolt-package README.md deployment section for details.",
+        stacklevel=2,
+    )
+    return [
+        (config_number, convert_kestrel_name_to_published_name(config_number))
+        for config_number in requested_configs
+    ]
 
 
 def write_colorbar(
@@ -137,38 +173,34 @@ def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    if args.start_config > args.stop_config:
-        raise ValueError("--start-config must be less than or equal to --stop-config")
-
-    if args.mode != "mean-edgetoedge" and (args.start_config != 1 or args.stop_config != 1):
-        raise ValueError(
-            f"--mode={args.mode} only supports setup/configuration 1. "
-            "Use --start-config 1 --stop-config 1."
-        )
-
     config_paths = load_config_paths(args.data_dir)
+    requested_configs = resolve_config_names(
+        args.configs,
+        config_names=args.config_names,
+    )
 
-    requested_configs = range(args.start_config, args.stop_config + 1)
-
-    for config_number in requested_configs:
-        if config_number not in config_paths:
+    for kestrel_config_number, publication_config_number in requested_configs:
+        if kestrel_config_number not in config_paths:
             raise ValueError(
-                f"Configuration {config_number} was requested, but only "
+                f"Kestrel configuration {kestrel_config_number} was requested, but only "
                 f"{min(config_paths)} through {max(config_paths)} are available."
             )
 
-        conf_path = config_paths[config_number]
+        conf_path = config_paths[kestrel_config_number]
         vmin, vmax = compute_plot_range(
             conf_path,
-            config_number=config_number,
+            config_number=publication_config_number,
             mode=args.mode,
         )
         output_path = args.output_dir / get_output_name(
-            config_number=config_number,
+            config_number=publication_config_number,
             cmap=args.cmap,
             mode=args.mode,
         )
-        print(f"writing {output_path.name}: vmin={vmin}, vmax={vmax}")
+        print(
+            f"writing {output_path.name}: publication_config={publication_config_number}, "
+            f"kestrel_config={kestrel_config_number}, vmin={vmin}, vmax={vmax}"
+        )
         write_colorbar(
             output_path,
             vmin=vmin,
