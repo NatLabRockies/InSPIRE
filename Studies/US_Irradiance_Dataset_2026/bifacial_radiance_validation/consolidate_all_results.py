@@ -8,6 +8,9 @@ Then, it uses the same GIDs to access corresponding results from S3 zarr files.
 The zarr distance indices (0-9) are mapped to actual distance values in meters
 from the bifacial radiance data.
 
+This script remaps legacy validation setup numbering to the current S3 ordering:
+1->1, 2->2, 3->3, 4->4, 5->5, 11->6, 6->7, 7->8, 8->9, 9->10, 10->11.
+
 Usage as Python function:
     from consolidate_all_results import consolidate_all_results
     data = consolidate_all_results("validation_results", 
@@ -31,17 +34,73 @@ import argparse
 import numpy as np
 
 
-DISTANCE_ON_Y_SETUPS = {6, 7, 8, 9, 11}
+# Setup IDs that use BR `y` as the distance axis in legacy validation numbering.
+DISTANCE_ON_Y_SETUPS_VALIDATION = {6, 7, 8, 9, 11}
+
+# Setup IDs that use BR `y` as the distance axis in current S3 numbering.
+DISTANCE_ON_Y_SETUPS_S3 = {6, 7, 8, 9, 10}
+
+# Legacy validation setup IDs mapped to current S3 configuration numbering.
+# This mapping keeps downstream analysis keyed on S3 setup semantics.
+VALIDATION_TO_S3_SETUP = {
+    1: 1,
+    2: 2,
+    3: 3,
+    4: 4,
+    5: 5,
+    11: 6,
+    6: 7,
+    7: 8,
+    8: 9,
+    9: 10,
+    10: 11,
+}
+
+
+def remap_validation_setups_to_s3(br_data):
+    """
+    Remap legacy validation setup IDs to current S3 setup numbering.
+
+    Parameters
+    ----------
+    br_data : pd.DataFrame
+        Consolidated bifacial radiance data with a `setup` column.
+
+    Returns
+    -------
+    pd.DataFrame
+        Copy of input data with `setup` remapped to S3 numbering.
+    """
+    if 'setup' not in br_data.columns:
+        raise ValueError("Expected 'setup' column in bifacial radiance data")
+
+    observed_setups = sorted(pd.unique(br_data['setup']))
+    unmapped_setups = [setup for setup in observed_setups if setup not in VALIDATION_TO_S3_SETUP]
+    if unmapped_setups:
+        raise ValueError(
+            "Found setup IDs without validation->S3 mapping: "
+            f"{unmapped_setups}. Update VALIDATION_TO_S3_SETUP before continuing."
+        )
+
+    remapped_data = br_data.copy()
+    remapped_data['setup'] = remapped_data['setup'].map(VALIDATION_TO_S3_SETUP).astype(int)
+
+    print("\nApplying validation->S3 setup remap:")
+    for setup in observed_setups:
+        print(f"  Setup {setup} -> {VALIDATION_TO_S3_SETUP[setup]}")
+
+    return remapped_data
 
 
 def _br_distance_axis_for_setup(setup_num: int) -> str:
     """
     Which bifacial_radiance coordinate corresponds to PySAM's `distance` dimension.
 
+    Interprets `setup_num` using legacy validation numbering.
     - Setups 1-5 and 10: BR `x` maps to PySAM `distance`
     - Setups 6-9 and 11: BR `y` maps to PySAM `distance`
     """
-    return "y" if setup_num in DISTANCE_ON_Y_SETUPS else "x"
+    return "y" if setup_num in DISTANCE_ON_Y_SETUPS_VALIDATION else "x"
 
 
 def consolidate_br_results(folder_name, base_path="."):
@@ -423,8 +482,9 @@ def create_distance_mapping(br_data):
     Uses the distance values from bifacial radiance data, which are monotonically increasing.
     
     Mapping strategy (setup-aware):
-    - Setups 1-5 and 10: Reverse mapping (index 9 -> smallest distance, index 0 -> largest)
-    - Setups 6-9 and 11: Direct mapping (index 0 -> smallest distance, index 9 -> largest)
+    Interprets setup IDs using current S3 numbering.
+    - Setups 1-5 and 11: Reverse mapping (index 9 -> smallest distance, index 0 -> largest)
+    - Setups 6-10: Direct mapping (index 0 -> smallest distance, index 9 -> largest)
     
     Parameters
     ----------
@@ -445,9 +505,9 @@ def create_distance_mapping(br_data):
         setup_data = br_data[br_data['setup'] == setup]
         distance_mapping[setup] = {}
         
-        # Determine if reverse mapping is needed
-        # Setups 1-5 and 10 use reverse mapping; setups 6-9 and 11 use direct mapping
-        use_reverse = setup not in DISTANCE_ON_Y_SETUPS
+        # Determine if reverse mapping is needed using S3 setup numbering.
+        # Setups 1-5 and 11 use reverse mapping; setups 6-10 use direct mapping.
+        use_reverse = setup not in DISTANCE_ON_Y_SETUPS_S3
         
         for gid in sorted(setup_data['gid'].unique()):
             gid_data = setup_data[setup_data['gid'] == gid]
@@ -642,6 +702,7 @@ def consolidate_all_results(folder_name, base_path=".", s3_bucket_path="oedi-dat
     pd.DataFrame
         DataFrame with columns: gid, setup, datetime, x, Wm2Front, data_source
         Contains data from both bifacial_radiance and pysam sources.
+        Output `setup` values follow current S3 configuration numbering.
     """
     print("="*60)
     print("CONSOLIDATING ALL RESULTS")
@@ -652,6 +713,7 @@ def consolidate_all_results(folder_name, base_path=".", s3_bucket_path="oedi-dat
     print("STEP 1: Processing Bifacial Radiance Results")
     print("="*60)
     br_data = consolidate_br_results(folder_name, base_path=base_path)
+    br_data = remap_validation_setups_to_s3(br_data)
     
     # Then, consolidate S3 zarr results using the same GIDs
     print("\n" + "="*60)
@@ -673,6 +735,7 @@ def consolidate_all_results(folder_name, base_path=".", s3_bucket_path="oedi-dat
     print(f"PySAM (zarr) rows: {len(zarr_data)}")
     print(f"Unique GIDs: {final_data['gid'].nunique()}")
     print(f"Unique setups: {final_data['setup'].nunique()}")
+    print(f"Setup IDs in final data (S3 numbering): {sorted(final_data['setup'].unique())}")
     print(f"Data sources: {final_data['data_source'].unique()}")
     
     return final_data

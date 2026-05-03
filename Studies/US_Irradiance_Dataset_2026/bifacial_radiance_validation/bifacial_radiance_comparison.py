@@ -175,6 +175,10 @@ def simulate_single(df_tmy = None, meta_dict = None, gid = None, setup = None,
     # collector width of 2m for the inspire scenarios
     tilt, pitch_temp, gcr = inspire_practical_pitch(latitude=metData.latitude, cw=2)
 
+    # Set-up order follows original order configurations were simulated in
+    # (i.e. Config 11 was added after the other configurations)
+    # Reordering of configs to insert Config 11 as Config 6 is handled in the
+    # consolidate_all_results.py script.
     if setup == 1:
         hub_height = 1.5
         pitch = 5
