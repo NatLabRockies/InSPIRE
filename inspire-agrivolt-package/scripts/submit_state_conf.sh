@@ -33,14 +33,13 @@ CONF=$2
 
 STATE_SLUG=${STATE// /_}
 
-OUTPUT_DIR=/projects/inspire/PySAM-MAPS/v1.2/"$STATE_SLUG"
-
 LOGFILE=scripts/logs/agrivolt-irr-$SLURM_JOB_NAME-$SLURM_JOB_ID.log
 ERRFILE=scripts/logs/agrivolt-irr-$SLURM_JOB_NAME-$SLURM_JOB_ID.err
 
 source scripts/_env_utils.sh
 ENV_NAME="$(get_inspire_agrivolt_conda_env)"
 CONF_DIR="$(get_inspire_agrivolt_SAM_conf_dir)"
+OUTPUT_DIR="$(get_inspire_agrivolt_model_outs_dir)"
 
 module load anaconda3
 source activate "$ENV_NAME"

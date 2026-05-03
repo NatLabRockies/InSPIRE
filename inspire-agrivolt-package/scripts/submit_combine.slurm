@@ -2,7 +2,7 @@
 #SBATCH --output=scripts/logs/agrivolt-irr-combine-%x-%j.out
 #SBATCH --error=scripts/logs/agrivolt-irr-combine-%x-%j.err
 #SBATCH --time=15:00:00
-#SBATCH --partition=standard
+#SBATCH --partition=shared
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=33
@@ -14,9 +14,13 @@
 source scripts/_env_utils.sh
 ENV_NAME="$(get_inspire_agrivolt_conda_env)"
 
+MODEL_OUTS_DIR="$(get_inspire_agrivolt_model_outs_dir)"
+POSTPROCESS_DIR="$(get_inspire_agrivolt_postprocess_dir)"
+FINAL_DIR="$(get_inspire_agrivolt_final_dir)"
+
 module load anaconda3
 source activate "$ENV_NAME"
 echo "environment activated"
 
 echo "calling combine.py"
-srun python scripts/combine.py
+srun python scripts/combine.py $MODEL_OUTS_DIR $POSTPROCESS_DIR $FINAL_DIR

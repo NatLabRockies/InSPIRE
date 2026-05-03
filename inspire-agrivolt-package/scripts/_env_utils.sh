@@ -71,3 +71,69 @@ EOF
     printf '%s\n' "$INSPIRE_AGRIVOLT_SAM_CONFIG_DIR"
 }
 
+get_inspire_agrivolt_model_outs_dir() {
+    if [[ -z "${INSPIRE_AGRIVOLT_MODEL_OUTS_DIR:-}" ]]; then
+        cat <<EOF >&2
+[ERROR] INSPIRE_AGRIVOLT_MODEL_OUTS_DIR is not set.
+
+Set to the path of the desired agrivoltaic irradiance outputs directory, e.g:
+
+    export INSPIRE_AGRIVOLT_MODEL_OUTS_DIR=/projects/inspire/PySAM-MAPS/v1.2/model-outs/
+
+    This is where the outputs of the irradiance model go. 
+    Produced by the following scripts in `scripts/`:
+    - `submit_state_conf.sh`
+    - `run_all_configs_state.sh`
+    - `run_all_states_config.sh`
+
+
+Then re-run your sbatch command.
+EOF
+        exit 1
+    fi
+
+    printf '%s\n' "$INSPIRE_AGRIVOLT_MODEL_OUTS_DIR"
+}
+
+
+get_inspire_agrivolt_postprocess_dir() {
+    if [[ -z "${INSPIRE_AGRIVOLT_POSTPROCESS_DIR:-}" ]]; then
+        cat <<EOF >&2
+[ERROR] INSPIRE_AGRIVOLT_POSTPROCESS_DIR is not set.
+
+Please set to the path of the desired postprocessing outputs directory, e.g:
+
+    export INSPIRE_AGRIVOLT_POSTPROCESS_DIR=/projects/inspire/PySAM-MAPS/v1.2/postprocess/
+
+    This is where the outputs of the postprocessing step go. Produced by the following script in `scripts/`:
+    - `submit_postprocess.slurm`
+
+Then re-run your sbatch command.
+EOF
+        exit 1
+    fi
+
+    printf '%s\n' "$INSPIRE_AGRIVOLT_POSTPROCESS_DIR"
+}
+
+
+get_inspire_agrivolt_final_dir() {
+    if [[ -z "${INSPIRE_AGRIVOLT_POSTPROCESS_DIR:-}" ]]; then
+        cat <<EOF >&2
+[ERROR] INSPIRE_AGRIVOLT_FINAL_DIR is not set.
+
+
+Please set to the path of the desired final combined outputs directory, e.g:
+
+    export INSPIRE_AGRIVOLT_FINAL_DIR=/projects/inspire/PySAM-MAPS/v1.2/final/
+
+This is where the final outputs of the combine step are stored. This step takes results from `INSPIRE_AGRIVOLT_MODEL_OUTS_DIR` and `INSPIRE_AGRIVOLT_POSTPROCESSING_DIR` and combined them into their final state. No more processing is done on the combined files in `INSPIRE_AGRIVOLT_FINAL_DIR`. They are produced by the following script in `scripts/`:
+- `submit_combine.slurm`.
+
+Then re-run your sbatch command.
+EOF
+        exit 1
+    fi
+
+    printf '%s\n' "$INSPIRE_AGRIVOLT_FINAL_DIR"
+}

@@ -2,8 +2,11 @@ import inspire_agrivolt
 from dask.distributed import LocalCluster
 from pathlib import Path
 
-CONFS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10"]
-VERSION = "v1.1"
+import argparse
+
+
+CONFS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11"]
+VERSION = "v1.2"
 
 STATES = [
     "alabama",
@@ -58,27 +61,27 @@ STATES = [
 ]
 
 
-def check_all_state_confs_exist():
+def check_all_state_confs_exist(model_outs_dir: Path):
     for state in STATES:
         for conf in CONFS:
             print(state, conf)
-            path = Path(f"/projects/inspire/PySAM-MAPS/{VERSION}/model-outs/{state}/{conf}")
+            path = model_outs_dir / state / conf
 
             if not path.exists():
                 raise ValueError(f"{state}/{conf} doesn't exist")
 
-def run_all():
+def run_postprocess_all_states_confs(model_outs_dir: Path, postprocess_dir: Path):
     for state in STATES:
         for conf in CONFS:
             print(state, conf)
-            path = Path(f"/projects/inspire/PySAM-MAPS/{VERSION}/model-outs/{state}/{conf}")
+            path = model_outs_dir / state / conf
 
             model_outs_paths = list(
                 path.glob("*.zarr")
             )
 
             POSTPROCESS_OUTS_ZARR = Path(
-                f"/projects/inspire/PySAM-MAPS/{VERSION}/postprocess/{state}/{conf}.zarr"
+                postprocess_dir / state / conf / ".zarr"
             )
 
             inspire_agrivolt.beds_postprocessing.postprocessing(
@@ -87,8 +90,21 @@ def run_all():
                 output_zarr_path=POSTPROCESS_OUTS_ZARR,
             )
 
-if __name__ == "__main__":
-    check_all_state_confs_exist()
+def main():
+    parser = argparse.ArgumentParser("postprocessor", description='postprocess model outputs')
+
+    parser.add_argument('model_outs_dir')
+    parser.add_argument('postprocess_dir')
+
+    args = parser.parse_args()
+
+    model_outs_dir = args.model_outs_dir
+    postprocess_dir = args.postprocess_dir
+
+    if not model_outs_dir.exists():
+        raise FileNotFoundError(f"model-outputs-directory not found at {str(model_outs_dir)}")
+
+    check_all_state_confs_exist(model_outs_dir=model_outs_dir)
 
     cluster = LocalCluster(
         n_workers=16, 
@@ -97,4 +113,10 @@ if __name__ == "__main__":
     client = cluster.get_client()
 
     print(client.dashboard_link)
-    run_all()
+    run_postprocess_all_states_confs(
+        model_outs_dir=model_outs_dir,
+        postprocess_dir=postprocess_dir
+    )
+
+if __name__ == "__main__":
+    main()

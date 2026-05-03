@@ -452,12 +452,12 @@ def run_state(
         "08",
         "09",
         "10",
+        "11",
     ],
     local_test_paths: dict = None,
     gids: np.ndarray = None,
     downsample: int = None,
 ) -> None:
-    # dask_client.register_plugin(PandasNumpyPlugin(logger=logger), name="pandas-numpy-plugin")
     dask_client.register_plugin(
         WeatherPlugin(logger=logger), name="weather-cache-init-plugin"
     )
@@ -497,6 +497,7 @@ def run_state(
     # step_size = 640  # works but bad WHEN RUNNING 2 tasks at a time in the loop to limit parallelisim and memory usage
     step_size = 320  # 8 workers, chunk size of 40
     for conf in confs:
+        logger.info(f"STATUS: building compute futures for conf: {conf}")
         # create delayed objects for each slice
         for i in range(0, len(gids), step_size):
             front, back = i, min(i + step_size, len(gids))
@@ -512,7 +513,7 @@ def run_state(
                 )
             )
 
-    logger.info(f"STATUS: delayed compute futures : #{len(tasks)} ")
+    logger.info(f"STATUS: delayed compute futures : #{len(tasks)}")
     logger.info("STATUS: dispatching dask futures...")
 
     max_in_flight = max(1, dask_nworkers // 2)

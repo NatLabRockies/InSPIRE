@@ -13,8 +13,10 @@
 
 source scripts/_env_utils.sh
 ENV_NAME="$(get_inspire_agrivolt_conda_env)"
+MODEL_OUTS_DIR="$(get_inspire_agrivolt_model_outs_dir)"
+POSTPROCESS_DIR="$(get_inspire_agrivolt_postprocess_dir)"
 
 module load anaconda3
 source activate "$ENV_NAME"
 
-srun python scripts/postprocess.py
+srun python scripts/postprocess.py $MODEL_OUTS_DIR $POSTPROCESS_DIR

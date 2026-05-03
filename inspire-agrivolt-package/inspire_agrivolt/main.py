@@ -32,7 +32,7 @@ def ground_irradiance():
     parser.add_argument(
         "--confs",
         nargs="+",
-        default=["01", "02", "03", "04", "05", "06", "07", "08", "09", "10"],
+        default=["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11"],
         help="List of config names (default: 01 through 10), STRONGLY RECOMENDED: only run one config at a time, submit multiple sbatch jobs to run multiple configs at once",
     )
 

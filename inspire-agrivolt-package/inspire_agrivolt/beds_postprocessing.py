@@ -8,132 +8,6 @@ from pathlib import Path
 
 from inspire_agrivolt import logger
 
-
-# TODO, calculate distances dynamically
-# THESE WILL BECOME OUTDATED WHEN WE UPDATE THE CONFIGS (calculate dynamically)
-# DISTANCES = {
-#     "01": (
-#         0.2502810919746036,
-#         0.7508432759238107,
-#         1.251405459873018,
-#         1.751967643822225,
-#         2.2525298277714323,
-#         2.753092011720639,
-#         3.2536541956698466,
-#         3.7542163796190535,
-#         4.2547785635682605,
-#         4.755340747517468,
-#     ),
-#     "02": (
-#         0.2502810919746036,
-#         0.7508432759238107,
-#         1.251405459873018,
-#         1.751967643822225,
-#         2.2525298277714323,
-#         2.753092011720639,
-#         3.2536541956698466,
-#         3.7542163796190535,
-#         4.2547785635682605,
-#         4.755340747517468,
-#     ),
-#     "03": (
-#         0.2502810919746036,
-#         0.7508432759238107,
-#         1.251405459873018,
-#         1.751967643822225,
-#         2.2525298277714323,
-#         2.753092011720639,
-#         3.2536541956698466,
-#         3.7542163796190535,
-#         4.2547785635682605,
-#         4.755340747517468,
-#     ),
-#     "04": (
-#         0.4004497471593658,
-#         1.2013492414780975,
-#         2.002248735796829,
-#         2.8031482301155606,
-#         3.6040477244342926,
-#         4.404947218753024,
-#         5.205846713071756,
-#         6.006746207390488,
-#         6.807645701709219,
-#         7.608545196027951,
-#     ),
-#     "05": (
-#         0.5561802043880081,
-#         1.6685406131640241,
-#         2.7809010219400405,
-#         3.8932614307160565,
-#         5.005621839492073,
-#         6.117982248268089,
-#         7.230342657044105,
-#         8.342703065820121,
-#         9.455063474596137,
-#         10.567423883372154,
-#     ),
-#     "06": (
-#         0.33370812263280486,
-#         1.0011243678984145,
-#         1.6685406131640244,
-#         2.335956858429634,
-#         3.003373103695244,
-#         3.6707893489608536,
-#         4.338205594226463,
-#         5.005621839492073,
-#         5.673038084757683,
-#         6.3404543300232925,
-#     ),
-#     "07": (
-#         0.33370812263280486,
-#         1.0011243678984145,
-#         1.6685406131640244,
-#         2.335956858429634,
-#         3.003373103695244,
-#         3.6707893489608536,
-#         4.338205594226463,
-#         5.005621839492073,
-#         5.673038084757683,
-#         6.3404543300232925,
-#     ),
-#     "08": (
-#         0.33370812263280486,
-#         1.0011243678984145,
-#         1.6685406131640244,
-#         2.335956858429634,
-#         3.003373103695244,
-#         3.6707893489608536,
-#         4.338205594226463,
-#         5.005621839492073,
-#         5.673038084757683,
-#         6.3404543300232925,
-#     ),
-#     "09": (
-#         0.5506734696910971,
-#         1.6520204090732913,
-#         2.7533673484554857,
-#         3.8547142878376794,
-#         4.956061227219874,
-#         6.057408166602068,
-#         7.1587551059842625,
-#         8.260102045366457,
-#         9.36144898474865,
-#         10.462795924130845,
-#     ),
-#     "10": (
-#         0.4352714643036585,
-#         1.3058143929109756,
-#         2.1763573215182923,
-#         3.0469002501256095,
-#         3.9174431787329262,
-#         4.787986107340243,
-#         5.65852903594756,
-#         6.529071964554877,
-#         7.399614893162195,
-#         8.27015782176951,
-#     ),
-# }
-
 # placeholder, we never read these values from the configs
 # we should place some restrictions on these to make sure they are never referenced in their current form
 pitch_temp, pitchfactor, tilt = -999, -999, -999
@@ -141,7 +15,7 @@ pitch_temp, pitchfactor, tilt = -999, -999, -999
 TRACKING_SCENARIOS = {"01", "02", "03", "04", "05"}
 TRACKING_3_BEDS_SCENARIOS = {"01", "02", "03", "04"}
 TRACKING_6_BEDS_SCENARIOS = {"05"}
-VARIABLE_PITCH_SCENARIOS = {"06", "07", "08", "09"}
+VARIABLE_PITCH_SCENARIOS = {"06", "07", "08", "09", "11"}
 VERTICAL_SCENARIOS = {"10"}
 
 ALL_SCENARIOS = TRACKING_SCENARIOS | VARIABLE_PITCH_SCENARIOS | VERTICAL_SCENARIOS
@@ -387,8 +261,25 @@ def fixed_tilt_vertical_6_beds(dataset: xr.Dataset) -> xr.Dataset:
     return tracking_6_beds(dataset=dataset)
 
 
-def iter_beds(scenario_dataset: xr.Dataset) -> xr.DataArray:
-    bins = np.array([3.8, 3.8492, 4.9491, 6.9355, 11.5465, 12.0001, np.inf])
+def iter_beds(scenario_dataset: xr.Dataset) -> xr.Dataset:
+    """
+    Iterate over scenario_dataset and create a beds aggregation.
+
+    Parameters
+    ----------
+    scenario_dataset: xr.Dataset
+
+    Returns
+    ----------
+    Resulting beds aggregate dataset contains the following datavars
+        under_panel (gid, time)
+        beda (gid, time)
+        bedb (gid, time)
+        bedc (gid, time)
+        edgetoedge (gid, time)
+    """
+
+    bins = np.array([3.8, 3.8492, 4.9491, 6.9355, 11.5465, 24.0001, np.inf])
 
     distance_index = np.arange(0, 10)
 
@@ -398,7 +289,7 @@ def iter_beds(scenario_dataset: xr.Dataset) -> xr.DataArray:
             [0, 4, 4, 6, 6, 8, 8, 10],  # 3.8492,  4.9491
             [0, 3, 3, 5, 5, 8, 8, 10],  # 4.9491, 6.9355
             [0, 2, 2, 5, 5, 7, 7, 10],  # 6.9355, 11.5465
-            [0, 1, 1, 4, 4, 7, 7, 10],  # 11.5465, 12.0
+            [0, 1, 1, 4, 4, 7, 7, 10],  # 11.5465, 24.0
         ],
         dtype=int,
     )
@@ -406,8 +297,8 @@ def iter_beds(scenario_dataset: xr.Dataset) -> xr.DataArray:
     digitized = np.digitize(scenario_dataset.pitch, bins)
 
     # if anything in the range
-    if np.any(digitized == 6):
-        raise ValueError("Invalid pitch value above 12 provided.")
+    if np.any(digitized >= 6):
+        raise ValueError("Recieved invalid pitch value above 24.")
 
     slice_index = digitized - 1
     selected_slices = slices[slice_index]
@@ -416,13 +307,13 @@ def iter_beds(scenario_dataset: xr.Dataset) -> xr.DataArray:
     for i, gid in enumerate(scenario_dataset.gid):
         # calculate mask
         under_start = selected_slices[i, 0]
-        under_end = selected_slices[i, 1]
-        beda_start = selected_slices[i, 2]
-        beda_end = selected_slices[i, 3]
-        bedb_start = selected_slices[i, 4]
-        bedb_end = selected_slices[i, 5]
-        bedc_start = selected_slices[i, 6]
-        bedc_end = selected_slices[i, 7]
+        under_end   = selected_slices[i, 1]
+        beda_start  = selected_slices[i, 2]
+        beda_end    = selected_slices[i, 3]
+        bedb_start  = selected_slices[i, 4]
+        bedb_end    = selected_slices[i, 5]  
+        bedc_start  = selected_slices[i, 6]
+        bedc_end    = selected_slices[i, 7]  
 
         mask_under = (distance_index >= under_start) & (distance_index < under_end)
         mask_edgetoedge = (distance_index >= beda_start) & (distance_index < bedc_end)
@@ -487,9 +378,6 @@ def fixed_tilt_3_beds(
         key: value for key, value in chunks.items() if key in keys_to_take
     }
 
-    # chunks_gid = chunks["gid"]
-    # chunks_time = chunks["time"]
-
     size_gid = sizes["gid"]
     size_time = sizes["time"]
 
@@ -497,10 +385,6 @@ def fixed_tilt_3_beds(
         return da.empty(
             dtype=float,
             shape=(size_gid, size_time),
-            # chunks=({
-            #     "gid":chunks_gid,
-            #     "time":chunks_time
-            # })
         )
 
     map_template = xr.Dataset(
@@ -626,7 +510,6 @@ def photosynthetically_active_radiation(edge_to_edge_ds: xr.Dataset) -> xr.DataA
 
     return edgetoedge_par
 
-# TODO, make sure that this makes sense
 def ground_irradiance_distances(ds: xr.Dataset) -> xr.DataArray:
     """
     Calculate beds distances from pitch.
@@ -636,7 +519,7 @@ def ground_irradiance_distances(ds: xr.Dataset) -> xr.DataArray:
 
     frac = xr.DataArray(
         (np.arange(NUM_BEDS) + 0.5) / NUM_BEDS,
-        dims=(NUM_BEDS,),
+        coords={"distance": np.arange(10, dtype=np.int32)},
         name=f"{NUM_BEDS}_fraction",
     )
 
