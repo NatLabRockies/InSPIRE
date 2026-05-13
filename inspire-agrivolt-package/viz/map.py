@@ -165,6 +165,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mode",
         choices=(
+            "mean-daily-insolation",
             "mean-edgetoedge",
             "farmable-land-percent",
             "july-shading-factor",
@@ -192,10 +193,22 @@ def parse_args() -> argparse.Namespace:
             "publication names."
         ),
     )
+    parser.add_argument(
+        "--cmin",
+        type=float,
+        default=None,
+        help="Optional lower bound for the color scale.",
+    )
+    parser.add_argument(
+        "--cmax",
+        type=float,
+        default=None,
+        help="Optional upper bound for the color scale.",
+    )
     return parser.parse_args()
 
 
-def resolve_to_kestrel_and_publication_config_numbers(
+def resolve_config_names(
     requested_configs: list[int],
     *,
     config_names: str,
@@ -352,6 +365,9 @@ def get_local_time_positions_for_gids(conf_ds: xr.Dataset, local_timestamp: str)
         coords={"gid": conf_ds["gid"]},
     )
 
+def mean_daily_insolation(conf_ds: xr.Dataset) -> xr.DataArray:
+    return (conf_ds['edgetoedge'].sum("time") / 365 / 1000)
+
 
 def july_21_15_edgetoedge_setup(conf_ds: xr.Dataset) -> xr.DataArray:
     time_positions = get_local_time_positions_for_gids(conf_ds, "2001-07-21 15:00:00")
@@ -363,6 +379,10 @@ def farmable_land_percent_per_acre(conf_ds: xr.Dataset) -> xr.DataArray:
 
 
 def select_field(conf_ds: xr.Dataset, *, mode: str) -> xr.DataArray:
+
+    if mode == "mean-daily-insolation":
+        return mean_daily_insolation(conf_ds)
+
     if mode == "mean-edgetoedge":
         return mean_edgetoedge_over_time(conf_ds)
 
@@ -379,6 +399,13 @@ def select_field(conf_ds: xr.Dataset, *, mode: str) -> xr.DataArray:
 
 
 def get_plot_metadata(mode: str, field_name: str) -> dict[str, str]:
+
+    if mode == 'mean-daily-insolation':
+        return {
+            "title": "Mean daily insolation over time",
+            "clabel": "Mean daily insolation [kW/m²/day]",
+        }
+
     if mode == "mean-edgetoedge":
         return {
             "title": "Mean edge-to-edge irradiance over time",
@@ -415,17 +442,28 @@ def get_output_stem(mode: str) -> str:
     return f"{mode}-inferno-fullres"
 
 
+def get_output_filename(
+    publication_config_number: int,
+    mode: str,
+    *,
+    fixed_crange: bool = False,
+) -> str:
+    suffix = "-fixed-crange" if fixed_crange else ""
+    return f"conf{publication_config_number}-{get_output_stem(mode)}{suffix}.png"
+
+
 def single(
     conf_ds: xr.Dataset,
     *,
     kestrel_config_number: int,
     publication_config_number: int,
     mode: str,
+    cmin: float | None = None,
+    cmax: float | None = None,
 ) -> None:
     print("converting gids to lat lon...")
     selected_field = select_field(
         conf_ds,
-        # config_number=publication_config_number,
         mode=mode,
     )
     subset = pvdeg.utilities.gids_dataset_to_coords_dataset(selected_field, gids_mapping_df)
@@ -444,7 +482,15 @@ def single(
     xmin, xmax = (float(arr.longitude_2d.min()), float(arr.longitude_2d.max()))
     ymin, ymax = (float(arr.latitude_2d.min()), float(arr.latitude_2d.max()))
 
-    plot = arr.hvplot.quadmesh(
+    clim = None
+    if cmin is not None or cmax is not None:
+        if cmin is None or cmax is None:
+            raise ValueError("Provide both --cmin and --cmax, or neither.")
+        if cmin > cmax:
+            raise ValueError("--cmin must be less than or equal to --cmax.")
+        clim = (cmin, cmax)
+
+    quadmesh_kwargs = dict(
         x="longitude_2d",
         y="latitude_2d",
         z=selected_field.name,
@@ -471,9 +517,17 @@ def single(
         xlim=(xmin, xmax),
         ylim=(ymin, ymax),
     )
+    if clim is not None:
+        quadmesh_kwargs["clim"] = clim
 
-    vmin = float(subset.min().compute())
-    vmax = float(subset.max().compute())
+    plot = arr.hvplot.quadmesh(**quadmesh_kwargs)
+
+    if clim is None:
+        vmin = float(subset.min().compute())
+        vmax = float(subset.max().compute())
+    else:
+        vmin, vmax = clim
+
     metadata = get_plot_metadata(mode, selected_field.name)
 
     driver = make_firefox_driver()
@@ -487,7 +541,11 @@ def single(
         vmax=vmax,
     )
 
-    fname = f"conf{publication_config_number}-{get_output_stem(mode)}.png"
+    fname = get_output_filename(
+        publication_config_number,
+        mode,
+        fixed_crange=clim is not None,
+    )
     
     export_png(
         plot_state,
@@ -504,6 +562,8 @@ def render_config(
     kestrel_config_number: int,
     publication_config_number: int,
     mode: str,
+    cmin: float | None = None,
+    cmax: float | None = None,
 ) -> None:
     if kestrel_config_number not in config_paths:
         raise ValueError(
@@ -521,13 +581,15 @@ def render_config(
         kestrel_config_number=kestrel_config_number,
         publication_config_number=publication_config_number,
         mode=mode,
+        cmin=cmin,
+        cmax=cmax,
     )
 
 
 def main():
     args = parse_args()
 
-    requested_configs = resolve_to_kestrel_and_publication_config_numbers(
+    requested_configs = resolve_config_names(
         args.configs,
         config_names=args.config_names,
     )
@@ -537,6 +599,8 @@ def main():
             kestrel_config_number=kestrel_config_number,
             publication_config_number=publication_config_number,
             mode=args.mode,
+            cmin=args.cmin,
+            cmax=args.cmax,
         )
 
 if __name__ == "__main__":

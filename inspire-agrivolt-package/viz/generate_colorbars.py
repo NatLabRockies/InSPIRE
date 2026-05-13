@@ -40,6 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mode",
         choices=(
+            "mean-daily-insolation",
             "mean-edgetoedge",
             "farmable-land-percent",
             "july-shading-factor",
@@ -68,6 +69,18 @@ def parse_args() -> argparse.Namespace:
         help="Standalone colorbar orientation.",
     )
     parser.add_argument(
+        "--cmin",
+        type=float,
+        default=None,
+        help="Optional lower bound for the colorbar range.",
+    )
+    parser.add_argument(
+        "--cmax",
+        type=float,
+        default=None,
+        help="Optional upper bound for the colorbar range.",
+    )
+    parser.add_argument(
         "--configs",
         type=int,
         nargs="+",
@@ -86,11 +99,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def compute_plot_range(conf_path: Path, config_number: int, mode: str) -> tuple[float, float]:
+def compute_plot_range(conf_path: Path, mode: str) -> tuple[float, float]:
     conf_ds = xr.open_zarr(conf_path)
     field = select_field(
         conf_ds,
-        config_number=config_number,
         mode=mode,
     )
     vmin = float(field.min().compute())
@@ -163,39 +175,64 @@ def write_colorbar(
     plt.close(fig)
 
 
-def get_output_name(config_number: int, cmap: str, mode: str) -> str:
+def get_output_name(
+    config_number: int,
+    cmap: str,
+    mode: str,
+    *,
+    fixed_crange: bool = False,
+) -> str:
+    suffix = "-fixed-crange" if fixed_crange else ""
     if mode == "mean-edgetoedge":
-        return f"config-{config_number:02d}-{cmap}-colorbar.png"
-    return f"config-{config_number:02d}-{mode}-{cmap}-colorbar.png"
+        return f"config-{config_number:02d}-{cmap}-colorbar{suffix}.png"
+    return f"config-{config_number:02d}-{mode}-{cmap}-colorbar{suffix}.png"
 
 
 def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    config_paths = load_config_paths(args.data_dir)
+    if (args.cmin is None) ^ (args.cmax is None):
+        raise ValueError("Provide both --cmin and --cmax, or neither.")
+    if args.cmin is not None and args.cmin > args.cmax:
+        raise ValueError("--cmin must be less than or equal to --cmax.")
+
     requested_configs = resolve_config_names(
         args.configs,
         config_names=args.config_names,
     )
 
+    config_paths = None
+    if args.cmin is None:
+        config_paths = load_config_paths(args.data_dir)
+
     for kestrel_config_number, publication_config_number in requested_configs:
-        if kestrel_config_number not in config_paths:
-            raise ValueError(
-                f"Kestrel configuration {kestrel_config_number} was requested, but only "
-                f"{min(config_paths)} through {max(config_paths)} are available."
+        if args.cmin is None:
+            assert config_paths is not None
+            if kestrel_config_number not in config_paths:
+                raise ValueError(
+                    f"Kestrel configuration {kestrel_config_number} was requested, but only "
+                    f"{min(config_paths)} through {max(config_paths)} are available."
+                )
+
+            conf_path = config_paths[kestrel_config_number]
+            vmin, vmax = compute_plot_range(
+                conf_path,
+                mode=args.mode,
+            )
+        else:
+            vmin, vmax = args.cmin, args.cmax
+            print(
+                "using explicit colorbar bounds "
+                f"cmin={vmin}, cmax={vmax} for publication_config={publication_config_number}, "
+                f"kestrel_config={kestrel_config_number}"
             )
 
-        conf_path = config_paths[kestrel_config_number]
-        vmin, vmax = compute_plot_range(
-            conf_path,
-            config_number=publication_config_number,
-            mode=args.mode,
-        )
         output_path = args.output_dir / get_output_name(
             config_number=publication_config_number,
             cmap=args.cmap,
             mode=args.mode,
+            fixed_crange=args.cmin is not None,
         )
         print(
             f"writing {output_path.name}: publication_config={publication_config_number}, "
