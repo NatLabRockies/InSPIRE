@@ -175,6 +175,10 @@ def simulate_single(df_tmy = None, meta_dict = None, gid = None, setup = None,
     # collector width of 2m for the inspire scenarios
     tilt, pitch_temp, gcr = inspire_practical_pitch(latitude=metData.latitude, cw=2)
 
+    # Set-up order follows original order configurations were simulated in
+    # (i.e. Config 11 was added after the other configurations)
+    # Reordering of configs to insert Config 11 as Config 6 is handled in the
+    # consolidate_all_results.py script.
     if setup == 1:
         hub_height = 1.5
         pitch = 5
@@ -260,6 +264,15 @@ def simulate_single(df_tmy = None, meta_dict = None, gid = None, setup = None,
         xp = 8
         fixed_tilt_angle = 90
         clearance_height = 0.6
+    if setup == 11:
+        hub_height = None
+        sazm = 180
+        pitchfactor = 1
+        modulename = 'PVmodule'
+        pitch = pitch_temp * pitchfactor
+        bedsWanted = 3
+        fixed_tilt_angle = tilt
+        clearance_height = 0.5   
 
     # TILT & PITCH CALCULATION HERE
 
@@ -267,7 +280,7 @@ def simulate_single(df_tmy = None, meta_dict = None, gid = None, setup = None,
 
     # -- establish tracking angles
     trackerParams = {'limit_angle':50,
-                     'angledelta':5,
+                     'angledelta':0.01,
                      'backtrack':True,
                      'gcr':gcr,
                      'cumulativesky':False,
@@ -333,21 +346,42 @@ def simulate_single(df_tmy = None, meta_dict = None, gid = None, setup = None,
     ResultWindSpeed = list(radObj.CompiledResults['Wind Speed'])
 
     # Modify modscanfront for Ground
-    # Absolute coordinate system (west left)
-    # West to East for single-axis tracker
-    numsensors = 10
+    # 2 sensors parallel to modules, 1 in light and 1 in shade for checkerboard pattern
+    numsensors = 100
     resolutionGround = pitch / numsensors
-    modscanfront = {'xstart': resolutionGround / 2, 
-                    'zstart': 0.05,
-                    'xinc': resolutionGround,
-                    'zinc': 0,
-                    'Ny':numsensors,
-                    'orient':'0 0 -1'}
+    if setup < 6 or setup == 10:
+        # Single-axis and vertical bifacial versions
+        # Absolute coordinate system (west left), then gets rotated to align with module
+        # Ny moves along the pitch direction, Nx moves along the width direction
+        # West to East for single-axis tracker
+        modscanfront = {'xstart': resolutionGround / 2, 
+                        'zstart': 0.05,
+                        'xinc': resolutionGround,
+                        'sx_yinc': 1,
+                        'yinc': 0,
+                        'zinc': 0,
+                        'Ny':numsensors,
+                        'Nx': 2, 
+                        'orient':'0 0 -1'}
+    else:
+        # For fixed tilt
+        # PySAM start fixed tilt at the edge
+        yedge = -np.cos(np.radians(fixed_tilt_angle)) 
+        modscanfront = {'xstart': 0,
+                        'ystart': yedge + resolutionGround / 2,  
+                        'zstart': 0.05,
+                        'xinc': 0,
+                        'sx_xinc': 1,
+                        'yinc': resolutionGround,
+                        'zinc': 0,
+                        'Ny': numsensors,
+                        'Nx': 2, 
+                        'orient':'0 0 -1'}
 
     # Analysis for GROUND
     trackerdict = radObj.analysis1axis(customname = 'Ground',
                                        modWanted=modWanted, rowWanted=rowWanted,
-                                        modscanfront=modscanfront, sensorsy=1)
+                                        modscanfront=modscanfront)
  
     keys=list(trackerdict.keys())
 
