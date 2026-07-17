@@ -126,7 +126,7 @@ def finalize_bokeh_state(
 
 def make_firefox_driver():
     env_bin = os.path.join(sys.prefix, "bin")
-    firefox_bin = os.path.join(env_bin, "firefox")
+    firefox_bin = os.path.join(env_bin, "FirefoxApp", "firefox")
     gecko_bin = os.path.join(env_bin, "geckodriver")
 
     os.environ["PATH"] = env_bin + os.pathsep + os.environ["PATH"]
