@@ -1,6 +1,14 @@
 """
 Generate publication maps
 
+Set up on Kestrel
+----------------
+
+module load conda
+source activate /projects/inspire/envs/render/
+export SSL_CERT_FILE="$CONDA_PREFIX/ssl/cert.pem"
+export REQUESTS_CA_BUNDLE="$CONDA_PREFIX/ssl/cert.pem"
+
 Iteration 2
 ------------
 
