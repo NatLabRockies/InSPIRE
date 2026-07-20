@@ -1,0 +1,67 @@
+#!/bin/bash
+# Discover nice shared color bounds for a metric, write bounds.env + shared colorbar.
+# Usage (via sbatch from submit_publication_maps.sh):
+#   sbatch viz/discover_crange.slurm <mode> <output_dir>
+#
+#SBATCH --output=scripts/logs/maps-discover-%x-%j.out
+#SBATCH --error=scripts/logs/maps-discover-%x-%j.err
+#SBATCH --time=04:00:00
+#SBATCH --partition=shared
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+#SBATCH --account=inspire
+#SBATCH --mail-user=kate.doubleday@nlr.gov
+#SBATCH --mail-type=ALL
+
+set -euo pipefail
+
+MODE="${1:?mode is required}"
+OUTPUT_DIR="${2:?output directory is required}"
+
+VIZ_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PKG_ROOT="$(cd "${VIZ_DIR}/.." && pwd)"
+cd "${VIZ_DIR}"
+mkdir -p "${PKG_ROOT}/scripts/logs" "${OUTPUT_DIR}"
+
+module load conda
+source activate /projects/inspire/envs/render/
+export SSL_CERT_FILE="$CONDA_PREFIX/ssl/cert.pem"
+export REQUESTS_CA_BUNDLE="$CONDA_PREFIX/ssl/cert.pem"
+
+PROBE_CONFIGS=(01 05 06 10 11)
+DATA_DIR="/projects/inspire/PySAM-MAPS/v1.2/final-backup/"
+BOUNDS_FILE="${OUTPUT_DIR}/bounds.env"
+SHARED_CBAR="${MODE}-inferno-colorbar-fixed-crange.png"
+
+CMD=(
+  python generate_colorbars.py
+  --mode "${MODE}"
+  --configs "${PROBE_CONFIGS[@]}"
+  --config-names publication-names
+  --data-dir "${DATA_DIR}"
+  --output-dir "${OUTPUT_DIR}"
+  --orientation vertical
+  --aggregate-range
+  --nice-bounds
+  --bounds-file "${BOUNDS_FILE}"
+  --shared-colorbar-name "${SHARED_CBAR}"
+)
+
+case "${MODE}" in
+  annual-energy-per-acre)
+    ;;
+  mean-daily-insolation|shading-factor)
+    CMD+=(--all-periods)
+    ;;
+  *)
+    echo "Unsupported mode for discovery: ${MODE}" >&2
+    exit 1
+    ;;
+esac
+
+"${CMD[@]}"
+
+echo "Discovery complete: ${BOUNDS_FILE}"
+cat "${BOUNDS_FILE}"

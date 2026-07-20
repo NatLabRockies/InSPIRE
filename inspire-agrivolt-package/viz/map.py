@@ -46,6 +46,7 @@ Kate Requests
 """
 
 import argparse
+import calendar
 import warnings
 import zarr
 import xarray as xr
@@ -79,6 +80,31 @@ from name_map import (
     convert_kestrel_name_to_published_name,
     convert_published_name_to_kestrel_name,
 )
+
+RENDER_MODES = (
+    "annual-energy-per-acre",
+    "mean-daily-insolation",
+    "mean-edgetoedge",
+    "farmable-land-percent",
+    "shading-factor",
+    "july-shading-factor",
+    "july-21-15-edgetoedge",
+)
+
+MONTH_NAMES = {
+    1: "January",
+    2: "February",
+    3: "March",
+    4: "April",
+    5: "May",
+    6: "June",
+    7: "July",
+    8: "August",
+    9: "September",
+    10: "October",
+    11: "November",
+    12: "December",
+}
 
 try:
     from timezonefinder import TimezoneFinder
@@ -172,17 +198,23 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        choices=(
-            "mean-daily-insolation",
-            "mean-edgetoedge",
-            "farmable-land-percent",
-            "july-shading-factor",
-            "july-21-15-edgetoedge",
-        ),
+        choices=RENDER_MODES,
         default="mean-edgetoedge",
         help=(
             "Field selection to render. "
-            "'mean-edgetoedge' preserves the current behavior."
+            "'mean-edgetoedge' preserves the current behavior. "
+            "'july-shading-factor' is an alias for shading-factor with month=7."
+        ),
+    )
+    parser.add_argument(
+        "--month",
+        type=int,
+        choices=range(1, 13),
+        default=None,
+        metavar="N",
+        help=(
+            "Optional month (1-12) for mean-daily-insolation and shading-factor. "
+            "Omit for annual / full-year aggregation."
         ),
     )
     parser.add_argument(
@@ -213,7 +245,21 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional upper bound for the color scale.",
     )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Optional directory for map PNG outputs (defaults to cwd).",
+    )
     return parser.parse_args()
+
+
+def normalize_mode_and_month(mode: str, month: int | None) -> tuple[str, int | None]:
+    if mode == "july-shading-factor":
+        if month is None:
+            month = 7
+        return "shading-factor", month
+    return mode, month
 
 
 def resolve_config_names(
@@ -292,12 +338,27 @@ def mean_edgetoedge_over_time(conf_ds: xr.Dataset) -> xr.DataArray:
     return conf_ds["edgetoedge"].mean(dim="time").rename("edgetoedge")
 
 
+def days_in_period(conf_ds: xr.Dataset, *, month: int | None) -> int:
+    hourly_index = get_hourly_index(conf_ds)
+    if month is None:
+        return 365
+
+    years = hourly_index[hourly_index.month == month].year
+    if len(years) == 0:
+        raise ValueError(f"No timesteps found for month={month}.")
+    year = int(years[0])
+    return calendar.monthrange(year, month)[1]
+
+
+def shading_factor(conf_ds: xr.Dataset, *, month: int | None = None) -> xr.DataArray:
+    time_mask = get_time_mask(conf_ds, month=month)
+    period_edgetoedge = conf_ds["edgetoedge"].where(time_mask, drop=True).mean(dim="time")
+    period_ghi = conf_ds["ghi"].where(time_mask, drop=True).mean(dim="time")
+    return ((period_edgetoedge / period_ghi) * 100).rename("shading_factor")
+
+
 def july_shading_factor(conf_ds: xr.Dataset) -> xr.DataArray:
-    july_mask = get_time_mask(conf_ds, month=7)
-    july_edgetoedge = conf_ds["edgetoedge"].where(july_mask, drop=True).mean(dim="time")
-    july_ghi = conf_ds["ghi"].where(july_mask, drop=True).mean(dim="time")
-    shading_factor = (july_edgetoedge / july_ghi).rename("shading_factor")
-    return shading_factor
+    return shading_factor(conf_ds, month=7)
 
 
 def get_gid_lat_lon(conf_ds: xr.Dataset) -> pd.DataFrame:
@@ -373,8 +434,25 @@ def get_local_time_positions_for_gids(conf_ds: xr.Dataset, local_timestamp: str)
         coords={"gid": conf_ds["gid"]},
     )
 
-def mean_daily_insolation(conf_ds: xr.Dataset) -> xr.DataArray:
-    return (conf_ds['edgetoedge'].sum("time") / 365 / 1000)
+def mean_daily_insolation(
+    conf_ds: xr.Dataset,
+    *,
+    month: int | None = None,
+) -> xr.DataArray:
+    days = days_in_period(conf_ds, month=month)
+    if month is None:
+        values = conf_ds["edgetoedge"].sum("time") / days / 1000
+    else:
+        time_mask = get_time_mask(conf_ds, month=month)
+        values = (
+            conf_ds["edgetoedge"].where(time_mask, drop=True).sum("time") / days / 1000
+        )
+    return values.rename("mean_daily_insolation")
+
+
+def annual_energy_per_acre(conf_ds: xr.Dataset) -> xr.DataArray:
+    # Zarr stores kWh/year/acre; convert to MWh/year/acre for maps/colorbars.
+    return (conf_ds["annual_energy_per_acre"] / 1000.0).rename("annual_energy_per_acre")
 
 
 def july_21_15_edgetoedge_setup(conf_ds: xr.Dataset) -> xr.DataArray:
@@ -386,10 +464,19 @@ def farmable_land_percent_per_acre(conf_ds: xr.Dataset) -> xr.DataArray:
     return conf_ds["farmable_land_percent"].rename("farmable_land_percent")
 
 
-def select_field(conf_ds: xr.Dataset, *, mode: str) -> xr.DataArray:
+def select_field(
+    conf_ds: xr.Dataset,
+    *,
+    mode: str,
+    month: int | None = None,
+) -> xr.DataArray:
+    mode, month = normalize_mode_and_month(mode, month)
+
+    if mode == "annual-energy-per-acre":
+        return annual_energy_per_acre(conf_ds)
 
     if mode == "mean-daily-insolation":
-        return mean_daily_insolation(conf_ds)
+        return mean_daily_insolation(conf_ds, month=month)
 
     if mode == "mean-edgetoedge":
         return mean_edgetoedge_over_time(conf_ds)
@@ -397,8 +484,8 @@ def select_field(conf_ds: xr.Dataset, *, mode: str) -> xr.DataArray:
     if mode == "farmable-land-percent":
         return farmable_land_percent_per_acre(conf_ds)
 
-    if mode == "july-shading-factor":
-        return july_shading_factor(conf_ds)
+    if mode == "shading-factor":
+        return shading_factor(conf_ds, month=month)
 
     if mode == "july-21-15-edgetoedge":
         return july_21_15_edgetoedge_setup(conf_ds)
@@ -406,36 +493,54 @@ def select_field(conf_ds: xr.Dataset, *, mode: str) -> xr.DataArray:
     raise ValueError(f"Unsupported render mode: {mode}")
 
 
-def get_plot_metadata(mode: str, field_name: str) -> dict[str, str]:
+def period_title_prefix(month: int | None) -> str:
+    if month is None:
+        return "Annual"
+    return MONTH_NAMES[month]
 
-    if mode == 'mean-daily-insolation':
+
+def get_plot_metadata(
+    mode: str,
+    field_name: str,
+    *,
+    month: int | None = None,
+) -> dict[str, str]:
+    mode, month = normalize_mode_and_month(mode, month)
+
+    if mode == "annual-energy-per-acre":
         return {
-            "title": "Mean daily insolation over time",
-            "clabel": "Mean daily insolation [kW/m²/day]",
+            "title": "Annual PV Production per Acre",
+            "clabel": "Annual PV Production per Acre (MWh/year/acre)",
+        }
+
+    if mode == "mean-daily-insolation":
+        return {
+            "title": f"{period_title_prefix(month)} Mean Daily Insolation",
+            "clabel": "Mean Daily Insolation (kWh/m²/day)",
         }
 
     if mode == "mean-edgetoedge":
         return {
-            "title": "Mean edge-to-edge irradiance over time",
-            "clabel": "Mean edge-to-edge irradiance [W/m²]",
+            "title": "Mean Edge-to-Edge Irradiance Over Time",
+            "clabel": "Mean Edge-to-Edge Irradiance (W/m²)",
         }
 
     if mode == "farmable-land-percent":
         return {
-            "title": "Farmable land percent per acre",
-            "clabel": "Farmable land percent [%]",
+            "title": "Farmable Land Percent",
+            "clabel": "Farmable Land Percent (%)",
         }
 
-    if mode == "july-shading-factor":
+    if mode == "shading-factor":
         return {
-            "title": "July shading factor",
-            "clabel": "Shading factor",
+            "title": f"{period_title_prefix(month)} Shading Factor",
+            "clabel": "Shading Factor (%)",
         }
 
     if mode == "july-21-15-edgetoedge":
         return {
-            "title": "Setup edge-to-edge irradiance on July 21 at 3 PM",
-            "clabel": "Edge-to-edge irradiance [W/m²]",
+            "title": "Edge-to-Edge Irradiance on July 21 at 3 PM",
+            "clabel": "Edge-to-Edge Irradiance (W/m²)",
         }
 
     return {
@@ -444,9 +549,19 @@ def get_plot_metadata(mode: str, field_name: str) -> dict[str, str]:
     }
 
 
-def get_output_stem(mode: str) -> str:
+def get_output_stem(mode: str, *, month: int | None = None) -> str:
+    mode, month = normalize_mode_and_month(mode, month)
+
     if mode == "mean-edgetoedge":
         return "inferno-fullres"
+
+    if mode in {"mean-daily-insolation", "shading-factor"}:
+        if month is None:
+            period = "annual"
+        else:
+            period = f"m{month:02d}"
+        return f"{mode}-{period}-inferno-fullres"
+
     return f"{mode}-inferno-fullres"
 
 
@@ -454,10 +569,14 @@ def get_output_filename(
     publication_config_number: int,
     mode: str,
     *,
+    month: int | None = None,
     fixed_crange: bool = False,
 ) -> str:
     suffix = "-fixed-crange" if fixed_crange else ""
-    return f"conf{publication_config_number}-{get_output_stem(mode)}{suffix}.png"
+    return (
+        f"conf{publication_config_number}-"
+        f"{get_output_stem(mode, month=month)}{suffix}.png"
+    )
 
 
 def single(
@@ -466,13 +585,18 @@ def single(
     kestrel_config_number: int,
     publication_config_number: int,
     mode: str,
+    month: int | None = None,
     cmin: float | None = None,
     cmax: float | None = None,
+    output_dir: Path | None = None,
 ) -> None:
+    mode, month = normalize_mode_and_month(mode, month)
+
     print("converting gids to lat lon...")
     selected_field = select_field(
         conf_ds,
         mode=mode,
+        month=month,
     )
     subset = pvdeg.utilities.gids_dataset_to_coords_dataset(selected_field, gids_mapping_df)
 
@@ -536,7 +660,7 @@ def single(
     else:
         vmin, vmax = clim
 
-    metadata = get_plot_metadata(mode, selected_field.name)
+    metadata = get_plot_metadata(mode, selected_field.name, month=month)
 
     driver = make_firefox_driver()
     plot_state = hv.renderer("bokeh").get_plot(plot).state
@@ -552,9 +676,13 @@ def single(
     fname = get_output_filename(
         publication_config_number,
         mode,
+        month=month,
         fixed_crange=clim is not None,
     )
-    
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        fname = str(output_dir / fname)
+
     export_png(
         plot_state,
         filename=fname,
@@ -562,16 +690,19 @@ def single(
         timeout=30,
     )
     print("saved to", fname)
-    
+
     driver.quit()
+
 
 def render_config(
     *,
     kestrel_config_number: int,
     publication_config_number: int,
     mode: str,
+    month: int | None = None,
     cmin: float | None = None,
     cmax: float | None = None,
+    output_dir: Path | None = None,
 ) -> None:
     if kestrel_config_number not in config_paths:
         raise ValueError(
@@ -589,13 +720,22 @@ def render_config(
         kestrel_config_number=kestrel_config_number,
         publication_config_number=publication_config_number,
         mode=mode,
+        month=month,
         cmin=cmin,
         cmax=cmax,
+        output_dir=output_dir,
     )
 
 
 def main():
     args = parse_args()
+    mode, month = normalize_mode_and_month(args.mode, args.month)
+
+    if month is not None and mode not in {"mean-daily-insolation", "shading-factor"}:
+        raise ValueError(
+            f"--month is only supported for mean-daily-insolation and shading-factor, "
+            f"not {mode}."
+        )
 
     requested_configs = resolve_config_names(
         args.configs,
@@ -606,10 +746,13 @@ def main():
         render_config(
             kestrel_config_number=kestrel_config_number,
             publication_config_number=publication_config_number,
-            mode=args.mode,
+            mode=mode,
+            month=month,
             cmin=args.cmin,
             cmax=args.cmax,
+            output_dir=args.output_dir,
         )
+
 
 if __name__ == "__main__":
     main()
