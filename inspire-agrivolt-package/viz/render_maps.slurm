@@ -6,8 +6,8 @@
 #   sbatch --array=0-12 viz/render_maps.slurm <mode> <output_dir>
 #   sbatch --array=0 viz/render_maps.slurm annual-energy-per-acre <output_dir>
 #
-#SBATCH --output=scripts/logs/maps-render-%x-%A_%a.out
-#SBATCH --error=scripts/logs/maps-render-%x-%A_%a.err
+#SBATCH --output=scripts/logs/%x-%A_%a.out
+#SBATCH --error=scripts/logs/%x-%A_%a.err
 #SBATCH --time=02:00:00
 #SBATCH --partition=shared
 #SBATCH --nodes=1
@@ -23,8 +23,8 @@ set -euo pipefail
 MODE="${1:?mode is required}"
 OUTPUT_DIR="${2:?output directory is required}"
 
-VIZ_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PKG_ROOT="$(cd "${VIZ_DIR}/.." && pwd)"
+PKG_ROOT="${SLURM_SUBMIT_DIR:?SLURM_SUBMIT_DIR is not set}"
+VIZ_DIR="${PKG_ROOT}/viz"
 cd "${VIZ_DIR}"
 mkdir -p "${PKG_ROOT}/scripts/logs" "${OUTPUT_DIR}"
 

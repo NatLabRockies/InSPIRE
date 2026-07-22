@@ -3,8 +3,8 @@
 # Usage (via sbatch from submit_publication_maps.sh):
 #   sbatch viz/discover_crange.slurm <mode> <output_dir>
 #
-#SBATCH --output=scripts/logs/maps-discover-%x-%j.out
-#SBATCH --error=scripts/logs/maps-discover-%x-%j.err
+#SBATCH --output=scripts/logs/%x-%j.out
+#SBATCH --error=scripts/logs/%x-%j.err
 #SBATCH --time=04:00:00
 #SBATCH --partition=shared
 #SBATCH --nodes=1
@@ -20,8 +20,8 @@ set -euo pipefail
 MODE="${1:?mode is required}"
 OUTPUT_DIR="${2:?output directory is required}"
 
-VIZ_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PKG_ROOT="$(cd "${VIZ_DIR}/.." && pwd)"
+PKG_ROOT="${SLURM_SUBMIT_DIR:?SLURM_SUBMIT_DIR is not set}"
+VIZ_DIR="${PKG_ROOT}/viz"
 cd "${VIZ_DIR}"
 mkdir -p "${PKG_ROOT}/scripts/logs" "${OUTPUT_DIR}"
 
