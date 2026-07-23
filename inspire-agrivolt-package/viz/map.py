@@ -262,6 +262,13 @@ def normalize_mode_and_month(mode: str, month: int | None) -> tuple[str, int | N
     return mode, month
 
 
+def get_cmap_for_mode(mode: str) -> str:
+    mode, _ = normalize_mode_and_month(mode, None)
+    if mode == "shading-factor":
+        return "inferno_r"
+    return "inferno"
+
+
 def resolve_config_names(
     requested_configs: list[int],
     *,
@@ -509,8 +516,8 @@ def get_plot_metadata(
 
     if mode == "annual-energy-per-acre":
         return {
-            "title": "Annual PV Production per Acre",
-            "clabel": "Annual PV Production per Acre (MWh/year/acre)",
+            "title": "Energy Production per Acre",
+            "clabel": "Energy Production per Acre (MWh/year/acre)",
         }
 
     if mode == "mean-daily-insolation":
@@ -551,18 +558,19 @@ def get_plot_metadata(
 
 def get_output_stem(mode: str, *, month: int | None = None) -> str:
     mode, month = normalize_mode_and_month(mode, month)
+    cmap = get_cmap_for_mode(mode)
 
     if mode == "mean-edgetoedge":
-        return "inferno-fullres"
+        return f"{cmap}-fullres"
 
     if mode in {"mean-daily-insolation", "shading-factor"}:
         if month is None:
             period = "annual"
         else:
             period = f"m{month:02d}"
-        return f"{mode}-{period}-inferno-fullres"
+        return f"{mode}-{period}-{cmap}-fullres"
 
-    return f"{mode}-inferno-fullres"
+    return f"{mode}-{cmap}-fullres"
 
 
 def get_output_filename(
@@ -591,6 +599,7 @@ def single(
     output_dir: Path | None = None,
 ) -> None:
     mode, month = normalize_mode_and_month(mode, month)
+    cmap = get_cmap_for_mode(mode)
 
     print("converting gids to lat lon...")
     selected_field = select_field(
@@ -641,7 +650,7 @@ def single(
             'states':'10m',
             'borders':'10m',
         },
-        cmap="inferno",
+        cmap=cmap,
         width=4000,
         height=2400,
         # width=400,
@@ -668,7 +677,7 @@ def single(
         plot_state,
         title=metadata["title"],
         clabel=metadata["clabel"],
-        cmap="inferno",
+        cmap=cmap,
         vmin=vmin,
         vmax=vmax,
     )

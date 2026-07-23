@@ -33,7 +33,13 @@ export REQUESTS_CA_BUNDLE="$CONDA_PREFIX/ssl/cert.pem"
 PROBE_CONFIGS=(01 05 06 10 11)
 DATA_DIR="/projects/inspire/PySAM-MAPS/v1.2/final-backup/"
 BOUNDS_FILE="${OUTPUT_DIR}/bounds.env"
-SHARED_CBAR="${MODE}-inferno-colorbar-fixed-crange.png"
+CMAP="inferno"
+case "${MODE}" in
+  shading-factor)
+    CMAP="inferno_r"
+    ;;
+esac
+SHARED_CBAR="${MODE}-${CMAP}-colorbar-fixed-crange.png"
 
 CMD=(
   python generate_colorbars.py
@@ -45,6 +51,7 @@ CMD=(
   --orientation vertical
   --aggregate-range
   --nice-bounds
+  --cmap "${CMAP}"
   --bounds-file "${BOUNDS_FILE}"
   --shared-colorbar-name "${SHARED_CBAR}"
 )
@@ -53,7 +60,8 @@ case "${MODE}" in
   annual-energy-per-acre)
     ;;
   mean-daily-insolation|shading-factor)
-    CMD+=(--all-periods)
+    # Probe winter/summer extremes only; maps still render annual + all 12 months.
+    CMD+=(--months 1 6 7 12)
     ;;
   *)
     echo "Unsupported mode for discovery: ${MODE}" >&2
